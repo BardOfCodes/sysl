@@ -1,0 +1,394 @@
+<!-- ReGL Shader Script -->
+<script type="module">
+  const canvas = document.getElementById('glcanvas');
+  const gl = canvas.getContext('webgl2');
+  if (!gl) throw new Error("WebGL2 not supported");
+
+  const regl = createREGL({ gl });
+
+  // Uniform values storage (for ALL uniforms used by ReGL)
+  const uniformValues = {
+    {% for uniform in underlying_uniforms %}
+    {% if uniform.type == "bool" %}
+    {{ uniform.name }}: {{ uniform.default|lower }},
+    {% elif uniform.type in ['vec2', 'vec3', 'vec4'] %}
+    {{ uniform.name }}: {{ uniform.default }},
+    {% else %}
+    {{ uniform.name }}: {{ uniform.default }},
+    {% endif %}
+    {% endfor %}
+    {% if resolution_via_scale %}
+    // Resolution control (managed by scale)
+    resolutionScale: 1.0,
+    {% endif %}
+  };
+
+  {% if show_controls %}
+  // Vector uniform component tracking (for UI controls only)
+  const vectorComponents = {};
+  {% for uniform in uniforms %}
+  {% if uniform.type in ['vec2', 'vec3', 'vec4'] %}
+  vectorComponents['{{ uniform.name }}'] = {};
+  {% set components = ['x', 'y', 'z', 'w'] %}
+  {% set vector_size = uniform.type[-1]|int %}
+  {% for i in range(vector_size) %}
+  vectorComponents['{{ uniform.name }}']['{{ components[i] }}'] = {{ uniform.default[i] }};
+  {% endfor %}
+  {% endif %}
+  {% endfor %}
+
+  // Function to update vector uniform from components
+  function updateVectorUniform(uniformName, vectorType) {
+    const components = vectorComponents[uniformName];
+    if (!components) return;
+    
+    if (vectorType === 'vec2') {
+      uniformValues[uniformName] = [components.x || 0, components.y || 0];
+    } else if (vectorType === 'vec3') {
+      uniformValues[uniformName] = [components.x || 0, components.y || 0, components.z || 0];
+    } else if (vectorType === 'vec4') {
+      uniformValues[uniformName] = [components.x || 0, components.y || 0, components.z || 0, components.w || 0];
+    }
+  }
+  {% endif %}
+
+  // Function to resize canvas
+  function resizeCanvas() {
+    {% if resolution_via_scale %}
+    // Resolution via scale: calculate backing buffer size based on scale
+    const W = canvas.clientWidth;
+    const H = canvas.clientHeight;
+    
+    // Backing-buffer size
+    const scale = uniformValues.resolutionScale;
+    const w = Math.max(1, Math.floor(W * scale));
+    const h = Math.max(1, Math.floor(H * scale));
+    
+    // Set the GL buffer to the scaled size
+    canvas.width = w;
+    canvas.height = h;
+    
+    // Update resolution uniform
+    uniformValues.resolution = [w, h];
+    {% else %}
+    // Standard resize: match canvas to client size
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    {% endif %}
+  }
+
+  // Initial resize
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  // Variable to hold the current draw function
+  let currentDraw = null;
+
+  // Function to create/recreate the draw function
+  function createDrawFunction(fragmentShader) {
+    return regl({
+      vert: `#version 300 es
+      precision mediump float;
+      in vec2 position;
+      void main() {
+        gl_Position = vec4(position, 0.0, 1.0);
+      }`,
+
+      frag: fragmentShader,
+
+      attributes: {
+        position: [
+          [-1, -1],
+          [ 1, -1],
+          [-1,  1],
+          [ 1,  1]
+        ]
+      },
+
+      uniforms: {
+        time: () => performance.now() / 1000,
+        {% for uniform in underlying_uniforms %}
+        {{ uniform.name }}: () => uniformValues.{{ uniform.name }},
+        {% endfor %}
+      },
+
+      primitive: 'triangle strip',
+      count: 4
+    });
+  }
+
+  {% if mouse_control %}
+  // Mouse controls for camera
+  let dragging = false, shiftPressed = false;
+  let last = { x: 0, y: 0 };
+
+  canvas.addEventListener('mousedown', e => {
+    dragging = true;
+    last = { x: e.clientX, y: e.clientY };
+  });
+  
+  window.addEventListener('mouseup', () => dragging = false);
+  window.addEventListener('keydown', e => { if (e.key === 'Shift') shiftPressed = true; });
+  window.addEventListener('keyup', e => { if (e.key === 'Shift') shiftPressed = false; });
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.98 : 1.02;
+    uniformValues.cameraDistance = Math.min(10, Math.max(0.1, uniformValues.cameraDistance * delta));
+  }, { passive: false });
+
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const dx = last.x - e.clientX;
+    const dy = last.y - e.clientY;
+
+    if (shiftPressed) {
+      // Pan: adjust cameraOrigin in world space
+      const { cameraAngleX, cameraAngleY, cameraDistance } = uniformValues;
+      
+      // Get current cameraOrigin
+      let cameraOrigin = uniformValues.cameraOrigin || [0, 0, 0];
+      
+      // Compute forward/right vectors
+      const forward = [
+        -Math.sin(cameraAngleY) * Math.cos(cameraAngleX),
+         Math.sin(cameraAngleX),
+        -Math.cos(cameraAngleY) * Math.cos(cameraAngleX),
+      ];
+      const worldUp = [0, 1, 0];
+      const right = [
+        forward[1] * worldUp[2] - forward[2] * worldUp[1],
+        forward[2] * worldUp[0] - forward[0] * worldUp[2],
+        forward[0] * worldUp[1] - forward[1] * worldUp[0],
+      ];
+      const len = Math.hypot(...right);
+      const normR = right.map(v => v / len);
+      const scale = 0.005 * cameraDistance;
+      
+      const newOrigin = [
+        cameraOrigin[0] + dx * scale * normR[0],
+        cameraOrigin[1] - dy * scale,
+        cameraOrigin[2] + dx * scale * normR[2],
+      ];
+      
+      // Update cameraOrigin
+      uniformValues.cameraOrigin = newOrigin;
+      {% if show_controls %}
+      if (vectorComponents['cameraOrigin']) {
+        vectorComponents['cameraOrigin']['x'] = newOrigin[0];
+        vectorComponents['cameraOrigin']['y'] = newOrigin[1];
+        vectorComponents['cameraOrigin']['z'] = newOrigin[2];
+      }
+      {% endif %}
+    } else {
+      // Orbit: adjust camera angles
+      uniformValues.cameraAngleX = Math.max(-Math.PI/2, Math.min(Math.PI/2,
+        uniformValues.cameraAngleX + dy * 0.01
+      ));
+      uniformValues.cameraAngleY += dx * 0.01;
+    }
+
+    last = { x: e.clientX, y: e.clientY };
+  });
+  {% endif %}
+
+  {% if show_controls %}
+  // Canvas size controls
+  document.getElementById('canvasWidth').addEventListener('input', (e) => {
+    const value = parseInt(e.target.value);
+    document.getElementById('canvasWidth_value').textContent = value;
+    document.getElementById('canvas-container').style.width = value + 'px';
+    resizeCanvas();
+  });
+
+  document.getElementById('canvasHeight').addEventListener('input', (e) => {
+    const value = parseInt(e.target.value);
+    document.getElementById('canvasHeight_value').textContent = value;
+    document.getElementById('canvas-container').style.height = value + 'px';
+    resizeCanvas();
+  });
+
+  // Setup control event listeners
+  {% for uniform in uniforms %}
+  {% if uniform.type == "float" or uniform.type == "int" %}
+  document.getElementById('{{ uniform.name }}').addEventListener('input', (e) => {
+    const value = {% if uniform.type == "int" %}parseInt(e.target.value){% else %}parseFloat(e.target.value){% endif %};
+    uniformValues.{{ uniform.name }} = value;
+    document.getElementById('{{ uniform.name }}_value').textContent = e.target.value;
+  });
+  {% elif uniform.type == "bool" %}
+  document.getElementById('{{ uniform.name }}').addEventListener('change', (e) => {
+    uniformValues.{{ uniform.name }} = e.target.checked;
+    document.getElementById('{{ uniform.name }}_label').textContent = `(${e.target.checked})`;
+  });
+  {% elif uniform.type in ['vec2', 'vec3', 'vec4'] %}
+  {% set components = ['x', 'y', 'z', 'w'] %}
+  {% set vector_size = uniform.type[-1]|int %}
+  {% for i in range(vector_size) %}
+  {% set component = components[i] %}
+  document.getElementById('{{ uniform.name }}_{{ component }}').addEventListener('input', (e) => {
+    const value = parseFloat(e.target.value);
+    vectorComponents['{{ uniform.name }}']['{{ component }}'] = value;
+    updateVectorUniform('{{ uniform.name }}', '{{ uniform.type }}');
+    document.getElementById('{{ uniform.name }}_{{ component }}_value').textContent = e.target.value;
+  });
+  {% endfor %}
+  {% endif %}
+  {% endfor %}
+
+  {% if resolution_via_scale %}
+  // Resolution scale control
+  document.getElementById('resolutionScale').addEventListener('input', (e) => {
+    const value = parseFloat(e.target.value);
+    uniformValues.resolutionScale = value;
+    document.getElementById('resolutionScale_value').textContent = e.target.value;
+    // Trigger resize to recalculate resolution
+    resizeCanvas();
+  });
+  {% endif %}
+
+  // Static shader code for reset (loaded from template)
+  const staticShaderCode = `{% include "static_shader.frag.html" %}`;
+
+  {% if show_controls %}
+  // Reset shader code button functionality
+  document.getElementById('reset-shader-code').addEventListener('click', () => {
+    try {
+      currentDraw = createDrawFunction(staticShaderCode);
+      console.log('Shader code reset to static version');
+    } catch (error) {
+      console.error('Error resetting shader code:', error);
+    }
+  });
+
+  // Save render button functionality
+  document.getElementById('save-render').addEventListener('click', () => {
+    try {
+      // Force a render to ensure the current frame is captured
+      if (currentDraw) {
+        regl.clear({ color: [0, 0, 0, 1] });
+        currentDraw();
+        
+        // Ensure WebGL commands are executed
+        gl.finish();
+        
+        // Read pixels from the framebuffer
+        const width = canvas.width;
+        const height = canvas.height;
+        const pixels = new Uint8Array(width * height * 4);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        
+        // Create a temporary canvas to process the pixel data
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = width;
+        tempCanvas.height = height;
+        const tempCtx = tempCanvas.getContext('2d');
+        
+        // Create ImageData from the pixels
+        const imageData = new ImageData(width, height);
+        
+        // Copy and flip the pixels (WebGL has origin at bottom-left, canvas at top-left)
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const srcIndex = ((height - 1 - y) * width + x) * 4;
+            const dstIndex = (y * width + x) * 4;
+            imageData.data[dstIndex] = pixels[srcIndex];         // R
+            imageData.data[dstIndex + 1] = pixels[srcIndex + 1]; // G
+            imageData.data[dstIndex + 2] = pixels[srcIndex + 2]; // B
+            imageData.data[dstIndex + 3] = pixels[srcIndex + 3]; // A
+          }
+        }
+        
+        // Put the image data on the temporary canvas
+        tempCtx.putImageData(imageData, 0, 0);
+        
+        // Convert to blob and download
+        tempCanvas.toBlob((blob) => {
+          if (blob) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `shader_render_${Date.now()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            console.log('Render saved successfully');
+          } else {
+            console.error('Failed to create blob from canvas');
+          }
+        }, 'image/png');
+      } else {
+        console.error('No shader loaded to save');
+      }
+    } catch (error) {
+      console.error('Error saving render:', error);
+    }
+  });
+  {% endif %}
+
+  // Original shader code for reset to defaults
+  const originalShaderCode = `{{ frag_str }}`;
+
+  // Reset button functionality
+  document.getElementById('reset-shader').addEventListener('click', () => {
+    {% for uniform in uniforms %}
+    {% if uniform.type == "float" or uniform.type == "int" %}
+    document.getElementById('{{ uniform.name }}').value = {{ uniform.default }};
+    uniformValues.{{ uniform.name }} = {{ uniform.default }};
+    document.getElementById('{{ uniform.name }}_value').textContent = {{ uniform.default }};
+    {% elif uniform.type == "bool" %}
+    document.getElementById('{{ uniform.name }}').checked = {{ uniform.default|lower }};
+    uniformValues.{{ uniform.name }} = {{ uniform.default|lower }};
+    document.getElementById('{{ uniform.name }}_label').textContent = `({{ uniform.default|lower }})`;
+    {% elif uniform.type in ['vec2', 'vec3', 'vec4'] %}
+    {% set components = ['x', 'y', 'z', 'w'] %}
+    {% set vector_size = uniform.type[-1]|int %}
+    {% for i in range(vector_size) %}
+    {% set component = components[i] %}
+    document.getElementById('{{ uniform.name }}_{{ component }}').value = {{ uniform.default[i] }};
+    vectorComponents['{{ uniform.name }}']['{{ component }}'] = {{ uniform.default[i] }};
+    document.getElementById('{{ uniform.name }}_{{ component }}_value').textContent = {{ uniform.default[i] }};
+    {% endfor %}
+    uniformValues.{{ uniform.name }} = {{ uniform.default }};
+    {% endif %}
+    {% endfor %}
+    
+    {% if resolution_via_scale %}
+    // Reset resolution scale
+    document.getElementById('resolutionScale').value = 1.0;
+    uniformValues.resolutionScale = 1.0;
+    document.getElementById('resolutionScale_value').textContent = '1.0';
+    resizeCanvas(); // Recalculate resolution
+    {% endif %}
+    
+    // Reset canvas size
+    document.getElementById('canvasWidth').value = 512;
+    document.getElementById('canvasHeight').value = 512;
+    document.getElementById('canvasWidth_value').textContent = '512';
+    document.getElementById('canvasHeight_value').textContent = '512';
+    document.getElementById('canvas-container').style.width = '512px';
+    document.getElementById('canvas-container').style.height = '512px';
+    resizeCanvas();
+    
+    // Reset shader code to original
+    try {
+      currentDraw = createDrawFunction(originalShaderCode);
+      console.log('Shader reset to original version');
+    } catch (error) {
+      console.error('Error resetting to original shader:', error);
+    }
+  });
+  {% endif %}
+
+  // Initialize the draw function
+  currentDraw = createDrawFunction(`{{ frag_str }}`);
+
+  regl.frame(() => {
+    regl.clear({ color: [0, 0, 0, 1] });
+    if (currentDraw) {
+      currentDraw();
+    }
+  });
+</script> 

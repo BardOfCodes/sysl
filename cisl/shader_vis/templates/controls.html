@@ -1,0 +1,257 @@
+<!-- Controls Panel -->
+<div id="control-panel" class="space-y-4">
+  <div class="bg-gray-50 p-4 rounded-lg shadow-sm space-y-6">
+
+    {% if show_controls %}
+    <!-- Uniform Controls - Grouped by set_name -->
+    {% set uniform_groups = {} %}
+    {% for uniform in uniforms %}
+      {% set set_name = uniform.set_name or "Other" %}
+      {% if set_name not in uniform_groups %}
+        {% set _ = uniform_groups.update({set_name: []}) %}
+      {% endif %}
+      {% set _ = uniform_groups[set_name].append(uniform) %}
+    {% endfor %}
+    
+    <!-- Add Settings group if it doesn't exist -->
+    {% if "Settings" not in uniform_groups %}
+      {% set _ = uniform_groups.update({"Settings": []}) %}
+    {% endif %}
+    
+    <!-- Process all non-Settings groups first -->
+    {% for group_name, group_uniforms in uniform_groups.items() %}
+    {% if group_name != "Settings" %}
+    <details open class="bg-gray-100 border border-gray-300 rounded-lg">
+      <summary class="px-3 py-2 font-medium text-gray-800 cursor-pointer hover:bg-gray-200">
+        {{ group_name }}
+      </summary>
+      <div class="px-3 pb-3 space-y-4">
+        {% for uniform in group_uniforms %}
+        <div class="space-y-2">
+          {% if uniform.type == "float" or uniform.type == "int" %}
+          <label for="{{ uniform.name }}" class="block font-medium text-gray-700">
+            {{ uniform.label }}: <span id="{{ uniform.name }}_value" class="text-blue-600 font-mono">{{ uniform.default }}</span>
+          </label>
+          <input
+            id="{{ uniform.name }}"
+            type="range"
+            min="{{ uniform.min }}"
+            max="{{ uniform.max }}"
+            step="{{ uniform.step }}"
+            value="{{ uniform.default }}"
+            class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+          />
+          {% elif uniform.type == "bool" %}
+          <div class="flex items-center space-x-2">
+            <input
+              id="{{ uniform.name }}"
+              type="checkbox"
+              class="form-checkbox h-5 w-5 text-blue-600 rounded"
+              {% if uniform.default %}checked{% endif %}
+            />
+            <label for="{{ uniform.name }}" class="font-medium text-gray-700">
+              {{ uniform.label }} <span id="{{ uniform.name }}_label" class="text-blue-600 font-mono">({{ uniform.default }})</span>
+            </label>
+          </div>
+          {% elif uniform.type in ['vec2', 'vec3', 'vec4'] %}
+          <div class="border-l-4 border-blue-500 pl-4 space-y-3">
+            <h4 class="font-semibold text-gray-800">{{ uniform.label }} ({{ uniform.type }})</h4>
+            <div class="grid grid-cols-1 gap-3">
+              {% set components = ['x', 'y', 'z', 'w'] %}
+              {% set vector_size = uniform.type[-1]|int %}
+              {% for i in range(vector_size) %}
+              {% set component = components[i] %}
+              <div class="space-y-1">
+                <label for="{{ uniform.name }}_{{ component }}" class="block text-sm font-medium text-gray-600">
+                  {{ component.upper() }}: <span id="{{ uniform.name }}_{{ component }}_value" class="text-blue-600 font-mono">{{ uniform.default[i] }}</span>
+                </label>
+                <input
+                  id="{{ uniform.name }}_{{ component }}"
+                  type="range"
+                  min="{{ uniform.min[i] }}"
+                  max="{{ uniform.max[i] }}"
+                  step="{{ uniform.step }}"
+                  value="{{ uniform.default[i] }}"
+                  class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                />
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+    {% endfor %}
+    
+    <!-- Process Settings group last -->
+    {% if "Settings" in uniform_groups %}
+    <details open class="bg-gray-100 border border-gray-300 rounded-lg">
+      <summary class="px-3 py-2 font-medium text-gray-800 cursor-pointer hover:bg-gray-200">
+        Settings
+      </summary>
+      <div class="px-3 pb-3 space-y-4">
+        {% for uniform in uniform_groups["Settings"] %}
+        <div class="space-y-2">
+          {% if uniform.type == "float" or uniform.type == "int" %}
+          <label for="{{ uniform.name }}" class="block font-medium text-gray-700">
+            {{ uniform.label }}: <span id="{{ uniform.name }}_value" class="text-blue-600 font-mono">{{ uniform.default }}</span>
+          </label>
+          <input
+            id="{{ uniform.name }}"
+            type="range"
+            min="{{ uniform.min }}"
+            max="{{ uniform.max }}"
+            step="{{ uniform.step }}"
+            value="{{ uniform.default }}"
+            class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+          />
+          {% elif uniform.type == "bool" %}
+          <div class="flex items-center space-x-2">
+            <input
+              id="{{ uniform.name }}"
+              type="checkbox"
+              class="form-checkbox h-5 w-5 text-blue-600 rounded"
+              {% if uniform.default %}checked{% endif %}
+            />
+            <label for="{{ uniform.name }}" class="font-medium text-gray-700">
+              {{ uniform.label }} <span id="{{ uniform.name }}_label" class="text-blue-600 font-mono">({{ uniform.default }})</span>
+            </label>
+          </div>
+          {% elif uniform.type in ['vec2', 'vec3', 'vec4'] %}
+          <div class="border-l-4 border-blue-500 pl-4 space-y-3">
+            <h4 class="font-semibold text-gray-800">{{ uniform.label }} ({{ uniform.type }})</h4>
+            <div class="grid grid-cols-1 gap-3">
+              {% set components = ['x', 'y', 'z', 'w'] %}
+              {% set vector_size = uniform.type[-1]|int %}
+              {% for i in range(vector_size) %}
+              {% set component = components[i] %}
+              <div class="space-y-1">
+                <label for="{{ uniform.name }}_{{ component }}" class="block text-sm font-medium text-gray-600">
+                  {{ component.upper() }}: <span id="{{ uniform.name }}_{{ component }}_value" class="text-blue-600 font-mono">{{ uniform.default[i] }}</span>
+                </label>
+                <input
+                  id="{{ uniform.name }}_{{ component }}"
+                  type="range"
+                  min="{{ uniform.min[i] }}"
+                  max="{{ uniform.max[i] }}"
+                  step="{{ uniform.step }}"
+                  value="{{ uniform.default[i] }}"
+                  class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                />
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+        
+        {% if mouse_control %}
+        <!-- Mouse Control Instructions -->
+        <div class="space-y-2 border-t pt-4">
+          <h4 class="font-semibold text-gray-800">Mouse Controls</h4>
+          <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div class="text-sm text-blue-700 space-y-1">
+              <div>• <strong>Drag:</strong> Orbit camera</div>
+              <div>• <strong>Wheel:</strong> Zoom in/out</div>
+              <div>• <strong>Shift + Drag:</strong> Pan camera</div>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+        
+        {% if resolution_via_scale %}
+        <!-- Resolution Scale Control -->
+        <div class="space-y-2 border-t pt-4">
+          <h4 class="font-semibold text-gray-800">Adaptive Resolution</h4>
+          <div class="space-y-2">
+            <label for="resolutionScale" class="block text-sm font-medium text-green-700">
+              Resolution Scale: <span id="resolutionScale_value" class="text-green-600 font-mono">1.0</span>
+            </label>
+            <input
+              id="resolutionScale"
+              type="range"
+              min="0.1"
+              max="2.0"
+              step="0.1"
+              value="1.0"
+              class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+            />
+            <div class="text-xs text-green-600">Automatically adjusts resolution based on canvas size</div>
+          </div>
+        </div>
+        {% endif %}
+        
+        <!-- Canvas Size Controls -->
+        <div class="space-y-2 border-t pt-4">
+          <h4 class="font-semibold text-gray-800">Canvas Size</h4>
+          <div class="space-y-2">
+            <label for="canvasWidth" class="block text-sm font-medium text-purple-700">
+              Width: <span id="canvasWidth_value" class="text-purple-600 font-mono">512</span>px
+            </label>
+            <input
+              id="canvasWidth"
+              type="range"
+              min="256"
+              max="1024"
+              step="32"
+              value="512"
+              class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+            />
+            <label for="canvasHeight" class="block text-sm font-medium text-purple-700">
+              Height: <span id="canvasHeight_value" class="text-purple-600 font-mono">512</span>px
+            </label>
+            <input
+              id="canvasHeight"
+              type="range"
+              min="256"
+              max="1024"
+              step="32"
+              value="512"
+              class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+            />
+          </div>
+        </div>
+        
+      </div>
+    </details>
+    {% endif %}
+    {% endif %}
+    
+    <!-- Always Visible Buttons -->
+    <details open class="bg-gray-100 border border-gray-300 rounded-lg">
+      <summary class="px-3 py-2 font-medium text-gray-800 cursor-pointer hover:bg-gray-200">
+        Actions
+      </summary>
+      <div class="px-3 pb-3 space-y-4">
+        <!-- Reset Buttons -->
+        <div class="space-y-2 border-t pt-4">
+          <div class="flex gap-2">
+            <button
+              id="reset-shader"
+              class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded font-medium transition-colors"
+            >
+              Reset to Defaults
+            </button>
+            <button
+              id="reset-shader-code"
+              class="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded font-medium transition-colors"
+            >
+              Reset Shader Code
+            </button>
+            <button
+              id="save-render"
+              class="px-4 py-2 bg-green-100 hover:bg-green-200 text-green-700 rounded font-medium transition-colors"
+            >
+              Save Render to PNG
+            </button>
+          </div>
+        </div>
+        
+      </div>
+    </details>
+  </div>
+</div> 

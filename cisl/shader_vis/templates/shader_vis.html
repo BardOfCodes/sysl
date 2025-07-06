@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container mx-auto px-4 space-y-4">
+  <!-- Interactive Shader Visualizer -->
+  <details open class="border rounded bg-white shadow-sm">
+    <summary class="px-4 py-2 bg-gray-100 cursor-pointer font-medium">
+    </summary>
+    <div class="p-4 bg-white space-y-6">
+      
+      <!-- Canvas Area - First Row -->
+      <div class="flex justify-center">
+        <div id="canvas-container" class="relative bg-black rounded-lg overflow-hidden shadow-lg" style="width: 512px; height: 512px;">
+          <canvas
+            id="glcanvas"
+            class="absolute inset-0 w-full h-full"
+          ></canvas>
+        </div>
+      </div>
+
+      <!-- Controls Area - Second Row -->
+      <div class="w-full">
+        {% include "controls.html" %}
+      </div>
+      
+    </div>
+  </details>
+</div>
+
+<!-- Include ReGL Script Component -->
+{% include "regl_script.js.html" %}
+
+{% endblock %} 
