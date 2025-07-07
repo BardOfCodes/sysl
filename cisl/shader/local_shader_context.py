@@ -94,4 +94,3 @@ class LocalShaderContext(ShaderModule):
         assert len(self.res_sdf_stack) == 0, "Expected no sdf in the codebook"
         self.scene_expr_props['out_type'] = res_type
         self.add_codeline(f"return {recent_res};")
-        print("Resolved codebook")

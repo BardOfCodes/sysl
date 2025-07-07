@@ -12,7 +12,7 @@
 # I need to help export the shaders -> just runnable snippets, and also animation outputs. 
 import sys
 import sympy as sp
-from typing import Dict, Any
+from typing import Dict, Any, Tuple, Union
 import geolipi.symbolic as gls
 from string import Template
 if sys.version_info >= (3, 11):
@@ -42,14 +42,23 @@ from .local_shader_context import SCENE_EXPR_PROPS, MATERIAL_EXPR_PROPS
 from .param_evaluate import _inline_parse_param_from_expr
 
 # V1 -> Just a single expression.
-def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr, settings: Dict[str, Any], return_shader_context: bool=False):
+def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr, settings: Dict[str, Any] | None = None, return_shader_context: bool=False) -> Union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
+    if settings is None:
+        settings = {
+        "render_mode": "v3",
+            "variables": {
+                "_RAYCAST_MAX_STEPS": 150,
+                "_ADD_FLOOR_PLANE": False,
+                "_AA": 4,
+            }
+        }
     global_sc = GlobalShaderContext()
     # How to use V3 here? ->
     global_sc = rec_shader_eval(expression, global_sc=global_sc)
     global_sc.resolve_codebook() # This will finins ahd add the function.
     # This should give a shader context with all the required modules. 
     # and then based on settings we will load the settings. 
-    render_mode = settings.get("render_mode", "v2")
+    render_mode = settings.get("render_mode", "v3")
     if render_mode == "v1":
         global_sc.add_shader_module("mainImage_v1")
     elif render_mode == "v2":
@@ -88,7 +97,7 @@ def eval_mat_solid(expression: csls.MatSolid, global_sc) -> GlobalShaderContext:
     global_sc = rec_shader_eval(sdf_expr, global_sc)
     global_sc = rec_shader_eval(material_expr, global_sc)
     assert len(global_sc.local_sc.res_sdf_stack) > 0, "No SDF in the stack"
-    res_type, final_sdf = global_sc.local_sc.res_sdf_stack.pop()
+    res_type, final_sdf = global_sc.local_sc.res_sdf_stack.pop()  # type: ignore
     valid_types = ["float", func_type]
     assert res_type in valid_types, f"Invalid result type {res_type} for {func_name}"
     final_material = global_sc.material_stack.pop()
@@ -140,7 +149,7 @@ def eval_bounded_solid(expression: csls.BoundedSolid, global_sc) -> GlobalShader
     global_sc.push_codebook(inner_name, SCENE_EXPR_PROPS)
     assert isinstance(sdf_expr, gls.GLFunction), "SDF expression must be a GLFunction"
     global_sc = rec_shader_eval(sdf_expr, global_sc)
-    inner_type, inner_sdf = global_sc.local_sc.res_sdf_stack[-1]
+    inner_type, inner_sdf = global_sc.local_sc.res_sdf_stack[-1]  # type: ignore
     global_sc.resolve_codebook()
     global_sc.pop_codebook()
 
@@ -261,7 +270,7 @@ def eval_mod(expression: MOD_TYPE, global_sc) -> GlobalShaderContext:
         assert isinstance(sub_expr, (gls.GLFunction, gls.GLExpr)), "Sub expression must be a GLFunction or GLExpr"
         global_sc = rec_shader_eval(sub_expr, global_sc)
         
-        (res_type, cur_res) = global_sc.local_sc.res_sdf_stack.pop()
+        (res_type, cur_res) = global_sc.local_sc.res_sdf_stack.pop()  # type: ignore
         global_sc.local_sc.res_sdf_count += 1
         new_pos = f"res_{global_sc.local_sc.res_sdf_count}"
         code_line = f"{res_type} {new_pos} = {func_name}({cur_res}, {shader_params});"
