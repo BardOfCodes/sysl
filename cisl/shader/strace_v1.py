@@ -18,7 +18,7 @@ CONSTANTS = {
     "_SCENE_RADIUS": ('float', 100.0),
     "_SCENE_BOX_CENTER": ('vec3', (0.0, 0.5, 0.0)),
     "_SCENE_BOX_SIZE": ('vec3', (10.0, 5.0, 10.0)),
-    "_RAYCAST_MAX_STEPS": ('int', 70),
+    "_RAYCAST_MAX_STEPS": ('int', 100),
     "_ADD_FLOOR_PLANE": ('bool', True),
     "_SHADOW_MAX_STEPS": ('int', 64),
     "_NORMAL_STEPS": ('int', 4),

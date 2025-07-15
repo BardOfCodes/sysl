@@ -112,8 +112,9 @@ Cone3D = register_shader_module("""
 @inputs pos, angle, height
 @outputs dist
 @dependencies
-float Cone3D( vec3 p, vec2 c, float h )
+float Cone3D( vec3 p, float angle, float h )
 {
+  vec2 c = vec2(cos(angle), sin(angle));
   // c is the sin/cos of the angle, h is height
   // Alternatively pass q instead of (c,h),
   // which is the point at the base in 2D

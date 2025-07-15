@@ -181,7 +181,7 @@ def eval_prim_sdf(expression: PRIM_TYPE, global_sc) -> GlobalShaderContext:
     params = expression.args
     shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
     # global_sc = PRIMITIVE_MAP[type(expression)](global_sc, *shader_params)
-    box_param = shader_params[0]
+    box_param = ",".join(shader_params)
     cur_pos = global_sc.local_sc.pos_stack.pop()
     func_name = expression.__class__.__name__
     sdf_name = f"sdf_{global_sc.local_sc.res_sdf_count}"
@@ -244,32 +244,49 @@ def eval_sdf_combinator(expression: COMBINATOR_TYPE, global_sc) -> GlobalShaderC
 def eval_mod(expression: MOD_TYPE, global_sc) -> GlobalShaderContext:
     sub_expr = expression.args[0]
     params = expression.args[1:]
+    shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
+    shader_params = ", ".join(shader_params)
     # This is a hack unclear how to deal with other types)
     func_name = expression.__class__.__name__
+    assert isinstance(sub_expr, (gls.GLFunction, gls.GLExpr)), "Sub expression must be a GLFunction or GLExpr"
     if isinstance(expression, TRANSFORM_TYPE):
         cur_pos = global_sc.local_sc.pos_stack.pop()
         global_sc.local_sc.pos_count += 1
         new_pos_count = global_sc.local_sc.pos_count
         new_pos = f"pos_{new_pos_count}"
-        shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
-        shader_params = ", ".join(shader_params)
         code_line = f"vec3 {new_pos} = {func_name}({cur_pos}, {shader_params});"
         global_sc.local_sc.add_codeline(code_line)
         global_sc.local_sc.add_dependency(func_name)
         global_sc.add_shader_module(func_name)
         global_sc.local_sc.pos_stack.append(new_pos)
-        assert isinstance(sub_expr, (gls.GLFunction, gls.GLExpr)), "Sub expression must be a GLFunction or GLExpr"
-        return rec_shader_eval(sub_expr, global_sc)
+        if isinstance(expression, (gls.Scale3D, gls.Scale2D)):
+        # For the case of scaling, adjust the outputs
+            cur_res_pos = len(global_sc.local_sc.res_sdf_stack) - 1
+            global_sc = rec_shader_eval(sub_expr, global_sc)
+            new_res_pos = len(global_sc.local_sc.res_sdf_stack) - 1
+            for res_pos in range(cur_res_pos, new_res_pos):
+                res_type, res_name = global_sc.local_sc.res_sdf_stack[res_pos]
+                if res_type == "float":
+                    code_line = f"{res_name} = {res_name} * {shader_params}.x;"
+                else:
+                    code_line = f"{res_name}.x = {res_name}.x * {shader_params}.x;"
+                global_sc.local_sc.add_codeline(code_line)
+            return global_sc
+        else:
+            return rec_shader_eval(sub_expr, global_sc)
     elif isinstance(expression, POSITIONALMOD_TYPE):
-        raise NotImplementedError(f"Position Modifier {expression} not implemented")
+        cur_pos = global_sc.local_sc.pos_stack.pop()
+        global_sc.local_sc.pos_count += 1
+        new_pos_count = global_sc.local_sc.pos_count
+        new_pos = f"pos_{new_pos_count}"
+        code_line = f"vec3 {new_pos} = {func_name}({cur_pos}, {shader_params});"
+        global_sc.local_sc.add_codeline(code_line)
+        global_sc.local_sc.add_dependency(func_name)
+        global_sc.add_shader_module(func_name)
+        global_sc.local_sc.pos_stack.append(new_pos)
+        return rec_shader_eval(sub_expr, global_sc)
     elif isinstance(expression, SDFMOD_TYPE):
-        sub_expr = expression.args[0]
-        params = expression.args[1:]
-        params = _inline_parse_param_from_expr(expression, params, global_sc)
-        shader_params = ", ".join(params)
-        assert isinstance(sub_expr, (gls.GLFunction, gls.GLExpr)), "Sub expression must be a GLFunction or GLExpr"
         global_sc = rec_shader_eval(sub_expr, global_sc)
-        
         (res_type, cur_res) = global_sc.local_sc.res_sdf_stack.pop()  # type: ignore
         global_sc.local_sc.res_sdf_count += 1
         new_pos = f"res_{global_sc.local_sc.res_sdf_count}"
@@ -278,7 +295,6 @@ def eval_mod(expression: MOD_TYPE, global_sc) -> GlobalShaderContext:
         global_sc.local_sc.add_dependency(func_name)
         global_sc.local_sc.res_sdf_stack.append((res_type, new_pos))
         return global_sc
-
     else:
         raise NotImplementedError(f"Modifier {expression} not implemented")
     

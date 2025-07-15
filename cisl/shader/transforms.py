@@ -15,10 +15,27 @@ vec3 EulerRotate3D( vec3 p, vec3 angles )
     mat3 rx = mat3(1.0, 0.0, 0.0, 0.0, cx, -sx, 0.0, sx, cx);
     mat3 ry = mat3(cy, 0.0, sy, 0.0, 1.0, 0.0, -sy, 0.0, cy);
     mat3 rz = mat3(cz, -sz, 0.0, sz, cz, 0.0, 0.0, 0.0, 1.0);
-    return rz * ry * rx * p;
+    mat3 R = rz * ry * rx;
+    return R * p ;
 }
 """)
 
+AxisAngleRotate3D = register_shader_module("""
+@name AxisAngleRotate3D
+@inputs pos, axis_angle
+@outputs pos
+@dependencies
+vec3 AxisAngleRotate3D( vec3 p, vec3 axis_angle )
+{
+    float theta = length(axis_angle);
+    vec3 axis = normalize(axis_angle);
+
+    mat3 K = mat3(0.0, -axis.z, axis.y, axis.z, 0.0, -axis.x, -axis.y, axis.x, 0.0);
+    float s = sin(theta);
+    float c = cos(theta);
+    mat3 R = mat3(1.0) + s * K + (1.0 - c) * (K * K);
+    return p * R;  // row vector multiplied from left
+}""")
 Scale3D = register_shader_module("""
 @name Scale3D
 @inputs pos, scale
