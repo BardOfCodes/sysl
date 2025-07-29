@@ -74,6 +74,8 @@ Material MatFloor(vec3 p, vec3 n) {
     return mat;
 }""")
 
+
+
 MatCarCoat = register_shader_module("""
 @name MatCarCoat
 @inputs p
@@ -497,3 +499,74 @@ Material MatPlastic(vec3 p, vec3 n) {
     return mat;
 }""")
 
+
+
+
+
+MatVox32 = register_shader_module("""
+@name MatVox32
+@inputs p
+@outputs color
+@dependencies BaseMaterials
+@vardeps 
+
+Material MatVox32(vec3 p, vec3 n) {
+    Material mat;
+
+    float voxelSize = 2.0 / 32.0;
+    float boundary = 0.05 * voxelSize;
+    vec3 local = mod(p + 1.0, voxelSize);
+    vec3 mask = step(boundary, local) * step(boundary, voxelSize - local);
+    float gridMask = mask.x * mask.y * mask.z;
+    mat.albedo = vec3(gridMask);
+    mat.roughness = 1.0;
+    mat.metallic = 0.0;
+    mat.clearcoat = 0.0;
+    return mat;
+}""")
+
+
+MatVox64 = register_shader_module("""
+@name MatVox64
+@inputs p
+@outputs color
+@dependencies BaseMaterials
+@vardeps 
+
+Material MatVox64(vec3 p, vec3 n) {
+    Material mat;
+
+    float voxelSize = 2.0 / 64.0;
+    float boundary = 0.05 * voxelSize;
+    vec3 local = mod(p + 1.0, voxelSize);
+    vec3 mask = step(boundary, local) * step(boundary, voxelSize - local);
+    float gridMask = mask.x * mask.y * mask.z;
+    mat.albedo = vec3(gridMask);
+    mat.roughness = 1.0;
+    mat.metallic = 0.0;
+    mat.clearcoat = 0.0;
+    return mat;
+}""")
+
+
+MatVox128 = register_shader_module("""
+@name MatVox128
+@inputs p
+@outputs color
+@dependencies BaseMaterials
+@vardeps 
+
+Material MatVox128(vec3 p, vec3 n) {
+    Material mat;
+
+    float voxelSize = 2.0 / 128.0;
+    float boundary = 0.05 * voxelSize;
+    vec3 local = mod(p + 1.0, voxelSize);
+    vec3 mask = step(boundary, local) * step(boundary, voxelSize - local);
+    float gridMask = mask.x * mask.y * mask.z;
+    mat.albedo = vec3(gridMask);
+    mat.roughness = 1.0;
+    mat.metallic = 0.0;
+    mat.clearcoat = 0.0;
+    return mat;
+}""")

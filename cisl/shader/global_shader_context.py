@@ -8,7 +8,9 @@ from .strace_v1 import CONSTANTS, UNIFORMS, PRELIMINARIES
 
 GLSL_TEMPLATE = Template("""#version 300 es
 #ifdef GL_ES
-precision mediump float;
+precision highp float;
+precision highp sampler2D;
+precision highp sampler3D;
 #endif
 out vec4 fragColor;  // Define the output color variable
 
@@ -34,6 +36,14 @@ class GlobalShaderContext:
         self.material_stack = []
         self.material_count = 0
         self.material_registry = {}
+        self.texture_registry = {}
+
+    def add_texture(self, texture_data):
+        # pack the texture data. 
+        name = texture_data["name"]
+        self.texture_registry[name] = texture_data
+    def get_textures(self):
+        return self.texture_registry
 
     def add_shader_module(self, module_name, *args, **kwargs):
         if module_name not in self.shader_modules:
@@ -97,8 +107,11 @@ class GlobalShaderContext:
                 self.uniforms[var_name] = UNIFORMS[var_name]
                 if var_name in var_settings:
                     self.uniforms[var_name]["init_value"] = var_settings[var_name]
+            elif var_name in self.texture_registry:
+                # Its just a "temp" variable. 
+                pass
             else:
-                raise ValueError(f"Variable '{var_name}' not found in CONSTANTS or UNIFORMS")
+                raise ValueError(f"Variable '{var_name}' not found in CONSTANTS, TEXTURES or UNIFORMS")
 
         convert_uniforms_to_constants = settings.get("convert_uniforms_to_constants", False)
         if convert_uniforms_to_constants:
@@ -146,6 +159,24 @@ class GlobalShaderContext:
         for var_name, var_info in self.uniforms.items():
             var_type = var_info['type']
             code_lines.append(f"uniform {var_type} {var_name};")
+        
+        code_lines.append("")  # Empty line for separation
+        return "\n".join(code_lines)
+    
+    def emit_textures(self) -> str:
+        """Emit shader code to declare textures."""
+        if not self.texture_registry:
+            return ""
+        
+        code_lines = ["// Textures"]
+        for var_name, var_info in self.texture_registry.items():
+            shape = var_info['shape']
+            if len(shape) == 2:
+                code_lines.append(f"uniform sampler2D {var_name};")
+            elif len(shape) == 3:
+                code_lines.append(f"uniform sampler3D {var_name};")
+            else:
+                raise ValueError(f"Invalid texture shape: {shape}")
         
         code_lines.append("")  # Empty line for separation
         return "\n".join(code_lines)
@@ -224,6 +255,10 @@ class GlobalShaderContext:
         if uniforms_code:
             code_blocks.append(uniforms_code)
         
+        # Emit textures
+        textures_code = self.emit_textures()
+        if textures_code:
+            code_blocks.append(textures_code)
         # Emit shader modules in topological order
         for module_name in sorted_modules:
             module = self.shader_modules[module_name]

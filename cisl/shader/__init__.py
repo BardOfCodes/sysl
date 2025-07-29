@@ -5,3 +5,4 @@ from .transforms import *
 from .combinators import *
 from .strace_v2 import *
 from .strace_v3 import *
+from .custom_functions import *

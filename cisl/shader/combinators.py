@@ -425,24 +425,90 @@ SMMap["SmoothDifference"] = smooth_difference_factory
 ## OTHERS:
 
 
-Dilate3D = register_shader_module("""
-@name Dilate3D
-@inputs sdf
-@outputs sdf
-@dependencies
-float Dilate3D( float sdf, float k)
+dilate_float_code = """
+float Dilate3D( float res, float k )
 {
-    return sdf + k;
+    return res - k;
+}
+"""
+dilate_vec_code = Template("""
+${type} Dilate3D( ${type} res, float k )
+{
+    res.x = res.x - k;
+    return res;
 }
 """)
 
-Erode3D = register_shader_module("""
-@name Erode3D
-@inputs sdf
-@outputs sdf
-@dependencies
-float Erode3D( float sdf, float k)
+dilate_arity_map = {
+    ("float", 1): dilate_float_code,
+    ("vec2", 1): dilate_vec_code.substitute(type="vec2"),
+    ("vec3", 1): dilate_vec_code.substitute(type="vec3"),
+    ("vec4", 1): dilate_vec_code.substitute(type="vec4"),
+}
+
+def dilate_factory():
+    name = "Dilate3D"
+    module = FixedArityShaderModule(name, dilate_arity_map)
+    return module
+
+SMMap["Dilate3D"] = dilate_factory
+
+## ERODE:
+
+erode_float_code = """
+float Erode3D( float res, float k )
 {
-    return sdf - k;
+    return res + k;
+}
+"""
+erode_vec_code = Template("""
+${type} Erode3D( ${type} res, float k )
+{
+    res.x = res.x + k;
+    return res;
 }
 """)
+
+erode_arity_map = {
+    ("float", 1): erode_float_code,
+    ("vec2", 1): erode_vec_code.substitute(type="vec2"),
+    ("vec3", 1): erode_vec_code.substitute(type="vec3"),
+    ("vec4", 1): erode_vec_code.substitute(type="vec4"),
+}
+
+def erode_factory():
+    name = "Erode3D"
+    module = FixedArityShaderModule(name, erode_arity_map)
+    return module
+
+SMMap["Erode3D"] = erode_factory
+
+## ONION:
+
+onion_float_code = """
+float Onion3D( float res, float k )
+{
+    return abs(res) - k;
+}
+"""
+onion_vec_code = Template("""
+${type} Onion3D( ${type} res, float k )
+{
+    res.x = abs(res.x) - k;
+    return res;
+}
+""")
+
+onion_arity_map = {
+    ("float", 1): onion_float_code,
+    ("vec2", 1): onion_vec_code.substitute(type="vec2"),
+    ("vec3", 1): onion_vec_code.substitute(type="vec3"),
+    ("vec4", 1): onion_vec_code.substitute(type="vec4"),
+}
+
+def onion_factory():
+    name = "Onion3D"
+    module = FixedArityShaderModule(name, onion_arity_map)
+    return module
+
+SMMap["Onion3D"] = onion_factory

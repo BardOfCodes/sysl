@@ -3,15 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- Tailwind Play CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tailwind Play CDN with Forms Plugin -->
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
   <script>
     tailwind.config = {
-      theme: { extend: {} },
-      plugins: [
-        require('@tailwindcss/forms'),
-        require('@tailwindcss/typography'),
-      ],
+      theme: { extend: {} }
     };
   </script>
 
@@ -19,9 +15,15 @@
   <!-- <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@latest/css/pico.min.css"> -->
 
   <!-- ReGL runtime from CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/regl@2.1.0/dist/regl.min.js"></script>
+  {% if backend == "twgl" %}
+    <script src="https://cdn.jsdelivr.net/npm/twgl.js@4.21.2/dist/4.x/twgl-full.min.js"></script>
+  {% else %}
+    <script src="https://cdn.jsdelivr.net/npm/regl@2.1.0/dist/regl.min.js"></script>
+  {% endif %}
   
-  <!-- Custom Styles -->
+  {% if load_textures %}
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+  {% endif %}
   <style>
     .slider::-webkit-slider-thumb {
       appearance: none;

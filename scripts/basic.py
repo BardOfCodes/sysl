@@ -84,6 +84,12 @@ expression_2 = csls.MatSolidV3(solid_expr_2,
                     )
 expression = gls.Union(expression, expression_2)
 
+solid_expr = gls.Sphere3D((0.5,))
+obj_1 = csls.MatSolidV3(solid_expr, csls.NonEmissiveMaterialV3((0., 1.0, 0.0), (1.0,), (1.0,), (0.3,)))
+obj_2 = csls.MatSolidV3(gls.Translate3D(solid_expr, (0.0, 0.5, 0.0)), csls.NonEmissiveMaterialV3((0., 0.0, 1.0), (1.0,), (1.0,), (0.3,)))
+obj_3 = csls.MatSolidV3(gls.Translate3D(solid_expr, (0.0, 0.25, 0.5)), csls.NonEmissiveMaterialV3((1.0, 0.0, 0.0), (1.0,), (1.0,), (0.3,)))
+expression = gls.SmoothUnion(obj_1, obj_2, (0.0,))
+
 result = evaluate_to_shader(expression, settings, return_shader_context=True)
 if len(result) == 3:
     shader_code, uniforms, shader_context = result

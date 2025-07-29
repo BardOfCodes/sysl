@@ -1,12 +1,7 @@
-<!-- ReGL Shader Script -->
-<script type="module">
-  const canvas = document.getElementById('glcanvas');
-  const gl = canvas.getContext('webgl2');
-  if (!gl) throw new Error("WebGL2 not supported");
+  // Original shader code for reset to defaults
+  const originalShaderCode = `{{ frag_str }}`;
 
-  const regl = createREGL({ gl });
-
-  // Uniform values storage (for ALL uniforms used by ReGL)
+  // Uniform values storage (for ALL uniforms used by both ReGL and TWGL)
   const uniformValues = {
     {% for uniform in underlying_uniforms %}
     {% if uniform.type == "bool" %}
@@ -22,6 +17,10 @@
     resolutionScale: 1.0,
     {% endif %}
   };
+
+  const canvas = document.getElementById('glcanvas');
+  const gl = canvas.getContext('webgl2');
+  if (!gl) throw new Error("WebGL2 not supported");
 
   {% if show_controls %}
   // Vector uniform component tracking (for UI controls only)
@@ -76,47 +75,14 @@
     canvas.width = rect.width;
     canvas.height = rect.height;
     {% endif %}
+    
+    // Update viewport (TWGL specific, but harmless for ReGL)
+    gl.viewport(0, 0, canvas.width, canvas.height);
   }
 
   // Initial resize
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
-
-  // Variable to hold the current draw function
-  let currentDraw = null;
-
-  // Function to create/recreate the draw function
-  function createDrawFunction(fragmentShader) {
-    return regl({
-      vert: `#version 300 es
-      precision mediump float;
-      in vec2 position;
-      void main() {
-        gl_Position = vec4(position, 0.0, 1.0);
-      }`,
-
-      frag: fragmentShader,
-
-      attributes: {
-        position: [
-          [-1, -1],
-          [ 1, -1],
-          [-1,  1],
-          [ 1,  1]
-        ]
-      },
-
-      uniforms: {
-        time: () => performance.now() / 1000,
-        {% for uniform in underlying_uniforms %}
-        {{ uniform.name }}: () => uniformValues.{{ uniform.name }},
-        {% endfor %}
-      },
-
-      primitive: 'triangle strip',
-      count: 4
-    });
-  }
 
   {% if mouse_control %}
   // Mouse controls for camera
@@ -249,26 +215,14 @@
   {% endif %}
 
   // Static shader code for reset (loaded from template)
-  const staticShaderCode = `{% include "static_shader.frag.html" %}`;
+  const staticShaderCode = `{% include "static_shader.frag" %}`;
 
-  {% if show_controls %}
-  // Reset shader code button functionality
-  document.getElementById('reset-shader-code').addEventListener('click', () => {
-    try {
-      currentDraw = createDrawFunction(staticShaderCode);
-      console.log('Shader code reset to static version');
-    } catch (error) {
-      console.error('Error resetting shader code:', error);
-    }
-  });
-
-  // Save render button functionality
-  document.getElementById('save-render').addEventListener('click', () => {
+  // Common save render functionality
+  function saveRender(renderFunction) {
     try {
       // Force a render to ensure the current frame is captured
-      if (currentDraw) {
-        regl.clear({ color: [0, 0, 0, 1] });
-        currentDraw();
+      if (renderFunction) {
+        renderFunction();
         
         // Ensure WebGL commands are executed
         gl.finish();
@@ -325,14 +279,10 @@
     } catch (error) {
       console.error('Error saving render:', error);
     }
-  });
-  {% endif %}
+  }
 
-  // Original shader code for reset to defaults
-  const originalShaderCode = `{{ frag_str }}`;
-
-  // Reset button functionality
-  document.getElementById('reset-shader').addEventListener('click', () => {
+  // Common reset uniform values function
+  function resetUniformValues() {
     {% for uniform in uniforms %}
     {% if uniform.type == "float" or uniform.type == "int" %}
     document.getElementById('{{ uniform.name }}').value = {{ uniform.default }};
@@ -371,24 +321,5 @@
     document.getElementById('canvas-container').style.width = '512px';
     document.getElementById('canvas-container').style.height = '512px';
     resizeCanvas();
-    
-    // Reset shader code to original
-    try {
-      currentDraw = createDrawFunction(originalShaderCode);
-      console.log('Shader reset to original version');
-    } catch (error) {
-      console.error('Error resetting to original shader:', error);
-    }
-  });
-  {% endif %}
-
-  // Initialize the draw function
-  currentDraw = createDrawFunction(`{{ frag_str }}`);
-
-  regl.frame(() => {
-    regl.clear({ color: [0, 0, 0, 1] });
-    if (currentDraw) {
-      currentDraw();
-    }
-  });
-</script> 
+  }
+  {% endif %} 

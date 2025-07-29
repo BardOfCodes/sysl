@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html.j2" %}
 {% block content %}
 
 <div class="container mx-auto px-4 space-y-4">
@@ -20,14 +20,18 @@
 
       <!-- Controls Area - Second Row -->
       <div class="w-full">
-        {% include "controls.html" %}
+        {% include "controls.html.j2" %}
       </div>
       
     </div>
   </details>
 </div>
 
-<!-- Include ReGL Script Component -->
-{% include "regl_script.js.html" %}
+<!-- Include Script Component Based on Backend -->
+{% if backend == 'twgl' %}
+{% include "twgl_script.js.html.j2" %}
+{% else %}
+{% include "regl_script.js.html.j2" %}
+{% endif %}
 
 {% endblock %} 

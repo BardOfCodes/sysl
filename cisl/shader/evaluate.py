@@ -41,6 +41,7 @@ from .global_shader_context import GlobalShaderContext
 from .local_shader_context import SCENE_EXPR_PROPS, MATERIAL_EXPR_PROPS
 from .param_evaluate import _inline_parse_param_from_expr
 
+DEFAULT_BOUND_THRESHOLD = 0.01
 # V1 -> Just a single expression.
 def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr, settings: Dict[str, Any] | None = None, return_shader_context: bool=False) -> Union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
     if settings is None:
@@ -71,10 +72,11 @@ def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr, settings: Dict[s
     
     shader_code = global_sc.emit_shader_code(settings)
     uniforms = global_sc.get_uniforms()
+    textures = global_sc.get_textures()
     if return_shader_context:
-        return shader_code, uniforms, global_sc
+        return shader_code, uniforms, textures, global_sc
     else:
-        return shader_code, uniforms
+        return shader_code, uniforms, textures
 
 
 @singledispatch
@@ -122,7 +124,6 @@ if (bound_sdf < ${bound_threshold}) {
 }
 """)
 
-DEFAULT_BOUND_THRESHOLD = 0.01
 
 @rec_shader_eval.register
 def eval_bounded_solid(expression: csls.BoundedSolid, global_sc) -> GlobalShaderContext:
@@ -192,8 +193,43 @@ def eval_prim_sdf(expression: PRIM_TYPE, global_sc) -> GlobalShaderContext:
     global_sc.local_sc.add_dependency(func_name)
     global_sc.add_shader_module(func_name)
     global_sc.local_sc.res_sdf_stack.append(("float", sdf_name))
-
     return global_sc
+
+
+@rec_shader_eval.register
+def eval_encoded_sdf_grid_3d(expression: csls.EncodedSDFGrid3D, global_sc) -> GlobalShaderContext:
+    # basic version
+    params = expression.args
+    shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
+    texture_name = shader_params[0]
+    
+    cur_pos = global_sc.local_sc.pos_stack.pop()
+    func_name = expression.__class__.__name__
+    sdf_name = f"sdf_{global_sc.local_sc.res_sdf_count}"
+    global_sc.local_sc.res_sdf_count += 1
+    custom_func_name = f"sdf_grid_3d_{global_sc.custom_func_count}"
+    global_sc.custom_func_count += 1
+    # GLSL code for sphere (sphere_param[0] is the vec4 sphere parameters)
+    code_line = f"float {sdf_name} = {custom_func_name}({cur_pos});"
+    global_sc.local_sc.add_codeline(code_line)
+    global_sc.local_sc.add_dependency(func_name)
+    global_sc.add_shader_module(func_name, function_name=custom_func_name, texture_name=texture_name)
+    global_sc.local_sc.res_sdf_stack.append(("float", sdf_name))
+    # Register the texture info
+    texture_data = {'name': texture_name, 
+                    'shape': [int(x) for x in list(params[2])],
+                    'n_dim': 3,
+                    'dtype': shader_params[3],
+                    'data_b64': shader_params[1]}
+    global_sc.add_texture(texture_data)
+    return global_sc
+
+
+@rec_shader_eval.register
+def eval_prim_sdf(expression: gls.SDFGrid3D, global_sc) -> GlobalShaderContext:
+    # basic version
+    raise NotImplementedError("Convert SDFGrid3D to EncodedSDFGrid3D first.")
+
 
 @rec_shader_eval.register
 def eval_sdf_combinator(expression: COMBINATOR_TYPE, global_sc) -> GlobalShaderContext:
@@ -286,13 +322,16 @@ def eval_mod(expression: MOD_TYPE, global_sc) -> GlobalShaderContext:
         global_sc.local_sc.pos_stack.append(new_pos)
         return rec_shader_eval(sub_expr, global_sc)
     elif isinstance(expression, SDFMOD_TYPE):
+        # This should be treated like Comb
         global_sc = rec_shader_eval(sub_expr, global_sc)
         (res_type, cur_res) = global_sc.local_sc.res_sdf_stack.pop()  # type: ignore
         global_sc.local_sc.res_sdf_count += 1
         new_pos = f"res_{global_sc.local_sc.res_sdf_count}"
         code_line = f"{res_type} {new_pos} = {func_name}({cur_res}, {shader_params});"
         global_sc.local_sc.add_codeline(code_line)
+        input_format = (res_type, 1)
         global_sc.local_sc.add_dependency(func_name)
+        global_sc.add_shader_module(func_name, input_format=input_format)
         global_sc.local_sc.res_sdf_stack.append((res_type, new_pos))
         return global_sc
     else:

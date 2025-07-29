@@ -56,3 +56,8 @@ class RegisterState(GLFunction):
     Apply the height field to the current height.
     """
     ...
+
+
+@register_symbol
+class EncodedSDFGrid3D(GLFunction):
+    ...

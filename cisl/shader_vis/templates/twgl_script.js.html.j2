@@ -1,0 +1,139 @@
+<!-- TWGL Shader Script -->
+<script type="module">
+{% if load_textures %}
+  {% include "twgl_texture_loader.js.j2" %}
+{% endif %}
+
+{% include "common_script.js.html.j2" %}
+
+  // Extract texture registry from Jinja
+  const textureRegistry = {
+    {% for texname, texdata in textures.items() %}
+    "{{ texname }}": {{ texdata | tojson }},
+    {% endfor %}
+  };
+
+  // === TWGL-specific code ===
+  
+  // Vertex shader source
+  const vertexShaderSource = `#version 300 es
+  precision mediump float;
+  in vec2 position;
+  void main() {
+    gl_Position = vec4(position, 0.0, 1.0);
+  }`;
+
+  // Variables to hold current program and buffers
+  let currentProgramInfo = null;
+  let currentBufferInfo = null;
+  let loadedTextures = {};  // <<== this is the fix
+
+  // Create buffer info for fullscreen quad
+  const arrays = {
+    position: {
+      numComponents: 2,
+      data: [
+        -1, -1,
+         1, -1,
+        -1,  1,
+         1,  1
+      ]
+    }
+  };
+  currentBufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
+
+  // Function to create/recreate the program
+  function createProgram(fragmentShader) {
+    try {
+      const programInfo = twgl.createProgramInfo(gl, [vertexShaderSource, fragmentShader]);
+      return programInfo;
+    } catch (error) {
+      console.error('Error creating shader program:', error);
+      throw error;
+    }
+  }
+
+  {% if show_controls %}
+  // TWGL-specific button event listeners
+  document.getElementById('reset-shader-code').addEventListener('click', () => {
+    try {
+      currentProgramInfo = createProgram(staticShaderCode);
+      console.log('Shader code reset to static version');
+    } catch (error) {
+      console.error('Error resetting shader code:', error);
+    }
+  });
+
+  document.getElementById('save-render').addEventListener('click', () => {
+    saveRender(() => {
+      if (currentProgramInfo) {
+        render();
+      }
+    });
+  });
+
+  // Reset button functionality
+  document.getElementById('reset-shader').addEventListener('click', () => {
+    resetUniformValues();
+    
+    // Reset shader code to original
+    try {
+      currentProgramInfo = createProgram(originalShaderCode);
+      console.log('Shader reset to original version');
+    } catch (error) {
+      console.error('Error resetting to original shader:', error);
+    }
+  });
+  {% endif %}
+
+  async function init() {
+  // Initialize the program
+    currentProgramInfo = createProgram(originalShaderCode);
+    {% if load_textures %}
+    loadedTextures = await loadTextures(gl, textureRegistry);
+    {% endif %}
+    
+    // Render function
+    function render() {
+      if (!currentProgramInfo) return;
+      
+      // Clear the canvas
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      // Use the program
+      gl.useProgram(currentProgramInfo.program);
+
+      // Prepare uniforms
+      const uniforms = {
+        time: performance.now() / 1000,
+        {% for uniform in underlying_uniforms %}
+        {{ uniform.name }}: uniformValues.{{ uniform.name }},
+        {% endfor %}
+        {% if load_textures %}
+        ...loadedTextures
+        {% endif %}
+      };
+
+      // Set uniforms
+      twgl.setUniforms(currentProgramInfo, uniforms);
+
+      // Set up attributes
+      twgl.setBuffersAndAttributes(gl, currentProgramInfo, currentBufferInfo);
+
+      // Draw
+      twgl.drawBufferInfo(gl, currentBufferInfo, gl.TRIANGLE_STRIP);
+    }
+
+    // Render loop
+    function renderLoop() {
+      render();
+      requestAnimationFrame(renderLoop);
+    }
+
+    // Start render loop
+    renderLoop();
+}
+
+init();  // call once
+</script> 

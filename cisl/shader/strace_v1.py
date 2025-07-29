@@ -19,6 +19,7 @@ CONSTANTS = {
     "_SCENE_BOX_CENTER": ('vec3', (0.0, 0.5, 0.0)),
     "_SCENE_BOX_SIZE": ('vec3', (10.0, 5.0, 10.0)),
     "_RAYCAST_MAX_STEPS": ('int', 100),
+    "_RAYCAST_CONSERVATIVE_STEPPING_RATE": ('float', 1.0),
     "_ADD_FLOOR_PLANE": ('bool', True),
     "_SHADOW_MAX_STEPS": ('int', 64),
     "_NORMAL_STEPS": ('int', 4),
@@ -140,7 +141,8 @@ raycast = register_shader_module("""
 @inputs ro, rd, rdx, rdy, lig
 @outputs col
 @dependencies SCENE_EXPRESSION
-@vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO, _RAYCAST_MAX_STEPS, _ADD_FLOOR_PLANE
+@vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO
+@vardeps _RAYCAST_MAX_STEPS, _ADD_FLOOR_PLANE, _RAYCAST_CONSERVATIVE_STEPPING_RATE
 vec2 raycast(in vec3 ro, in vec3 rd) {
 
     vec2 res = vec2(-1.0,-1.0);
@@ -191,7 +193,7 @@ vec2 raycast(in vec3 ro, in vec3 rd) {
                 res = vec2(t, h.y);
                 break;
             }
-            t += h.x;
+            t += h.x * _RAYCAST_CONSERVATIVE_STEPPING_RATE;
         }
     }
 

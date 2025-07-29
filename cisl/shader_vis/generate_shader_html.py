@@ -9,7 +9,7 @@ import os
 import html
 from jinja2 import Environment, FileSystemLoader
 
-def generate_html(data, template_name='shader_vis.html', output_file=None, mouse_control=True, resolution_via_scale=True, show_controls=False):
+def generate_html(data, template_name='shader_vis.html.j2', output_file=None, mouse_control=True, resolution_via_scale=True, show_controls=False, backend='regl'):
     """
     Generate HTML from JSON configuration using Jinja template.
     
@@ -20,8 +20,18 @@ def generate_html(data, template_name='shader_vis.html', output_file=None, mouse
         mouse_control (bool): Enable mouse-controlled camera
         resolution_via_scale (bool): Enable resolution scaling
         show_controls (bool): Show shader control sliders
+        backend (str): Rendering backend to use ('regl' or 'twgl')
     """
     
+    # Validate backend parameter
+    if backend not in ['regl', 'twgl']:
+        raise ValueError(f"backend must be 'regl' or 'twgl', got '{backend}'")
+    texture_data = data.get('textures', {})
+    if len(texture_data) > 0:
+        load_textures = True
+    else:
+        load_textures = False
+
     # Get the directory of this script
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
@@ -89,13 +99,16 @@ def generate_html(data, template_name='shader_vis.html', output_file=None, mouse
     html_content = template.render(
         title=data.get('title', 'Untitled'),
         frag_str=data.get('frag_str', ''),
+        load_textures=load_textures,
+        textures=texture_data,
         uniforms=ctrl_uniforms,  # UI controls uniforms
         underlying_uniforms=underlying_uniforms,  # All uniforms for ReGL
         mouse_control=mouse_control,
         camera_defaults=camera_defaults,
         resolution_via_scale=resolution_via_scale,
         resolution_defaults=resolution_defaults,
-        show_controls=show_controls
+        show_controls=show_controls,
+        backend=backend
     )
     
     
@@ -103,17 +116,29 @@ def generate_html(data, template_name='shader_vis.html', output_file=None, mouse
 
 
 
-def create_shader_html(shader_code, cisl_uniforms, title="Generated Shader",
-    template_name='shader_vis.html', output_file=None, mouse_control=True,
-    resolution_via_scale=True, show_controls=False,
+def create_shader_html(shader_code, cisl_uniforms, cisl_textures, title="Generated Shader",
+    template_name='shader_vis.html.j2', output_file=None, mouse_control=True,
+    resolution_via_scale=True, show_controls=False, backend='regl',
     script_dir=None):
     """
     Create complete HTML structure for the shader visualizer.
+    
+    Args:
+        shader_code (str): The fragment shader code
+        cisl_uniforms (dict): CISL uniforms dictionary
+        title (str): Title for the shader
+        template_name (str): Name of the Jinja template file
+        output_file (str): Output HTML file path (optional)
+        mouse_control (bool): Enable mouse-controlled camera
+        resolution_via_scale (bool): Enable resolution scaling
+        show_controls (bool): Show shader control sliders
+        backend (str): Rendering backend to use ('regl' or 'twgl')
+        script_dir (str): Script directory (optional)
     """
-    json_uniforms = create_shader_json(shader_code, cisl_uniforms, title)
-    return generate_html(json_uniforms, template_name=template_name, output_file=output_file, mouse_control=mouse_control, resolution_via_scale=resolution_via_scale, show_controls=show_controls)
+    json_uniforms = create_shader_json(shader_code, cisl_uniforms, cisl_textures, title)
+    return generate_html(json_uniforms, template_name=template_name, output_file=output_file, mouse_control=mouse_control, resolution_via_scale=resolution_via_scale, show_controls=show_controls, backend=backend)
 
-def create_shader_json(shader_code, cisl_uniforms, title="Generated Shader"):
+def create_shader_json(shader_code, cisl_uniforms, cisl_textures, title="Generated Shader"):
     """
     Create complete JSON structure for the HTML template system.
     
@@ -126,11 +151,11 @@ def create_shader_json(shader_code, cisl_uniforms, title="Generated Shader"):
         dict: Complete JSON structure for template rendering
     """
     json_uniforms = convert_cisl_uniforms_to_json(cisl_uniforms, title)
-    
     return {
         "title": title,
         "frag_str": shader_code,
-        "uniforms": json_uniforms
+        "uniforms": json_uniforms,
+        "textures": cisl_textures
     }
 
 

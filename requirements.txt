@@ -1,0 +1,19 @@
+# Core dependencies for CISL
+numpy>=1.21.0
+sympy>=1.9.0
+jinja2>=3.0.0
+Pillow>=8.3.0
+
+# For Jupyter notebook support
+IPython>=7.0.0
+jupyter>=1.0.0
+
+# Development dependencies (optional)
+# Uncomment these if you need development tools
+# pytest>=6.0.0
+# black>=21.0.0
+# flake8>=3.9.0
+
+# Note: geolipi appears to be a local dependency in your project
+# If geolipi is a separate package that needs to be installed,
+# you may need to add it here or install it separately 

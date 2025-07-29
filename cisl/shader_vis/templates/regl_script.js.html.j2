@@ -1,0 +1,89 @@
+<!-- ReGL Shader Script -->
+<script type="module">
+
+{% include "common_script.js.html.j2" %}
+
+  // === ReGL-specific code ===
+  const regl = createREGL({ gl });
+
+  // Variable to hold the current draw function
+  let currentDraw = null;
+
+  // Function to create/recreate the draw function
+  function createDrawFunction(fragmentShader) {
+    return regl({
+      vert: `#version 300 es
+      precision mediump float;
+      in vec2 position;
+      void main() {
+        gl_Position = vec4(position, 0.0, 1.0);
+      }`,
+
+      frag: fragmentShader,
+
+      attributes: {
+        position: [
+          [-1, -1],
+          [ 1, -1],
+          [-1,  1],
+          [ 1,  1]
+        ]
+      },
+
+      uniforms: {
+        time: () => performance.now() / 1000,
+        {% for uniform in underlying_uniforms %}
+        {{ uniform.name }}: () => uniformValues.{{ uniform.name }},
+        {% endfor %}
+      },
+
+      primitive: 'triangle strip',
+      count: 4
+    });
+  }
+
+  {% if show_controls %}
+  // ReGL-specific button event listeners
+  document.getElementById('reset-shader-code').addEventListener('click', () => {
+    try {
+      currentDraw = createDrawFunction(staticShaderCode);
+      console.log('Shader code reset to static version');
+    } catch (error) {
+      console.error('Error resetting shader code:', error);
+    }
+  });
+
+  document.getElementById('save-render').addEventListener('click', () => {
+    saveRender(() => {
+      if (currentDraw) {
+        regl.clear({ color: [0, 0, 0, 1] });
+        currentDraw();
+      }
+    });
+  });
+
+  // Reset button functionality
+  document.getElementById('reset-shader').addEventListener('click', () => {
+    resetUniformValues();
+    
+    // Reset shader code to original
+    try {
+      currentDraw = createDrawFunction(originalShaderCode);
+      console.log('Shader reset to original version');
+    } catch (error) {
+      console.error('Error resetting to original shader:', error);
+    }
+  });
+  {% endif %}
+
+  // Initialize the draw function
+  currentDraw = createDrawFunction(originalShaderCode);
+
+  // ReGL render loop
+  regl.frame(() => {
+    regl.clear({ color: [0, 0, 0, 1] });
+    if (currentDraw) {
+      currentDraw();
+    }
+  });
+</script> 
