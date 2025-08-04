@@ -208,7 +208,8 @@ def convert_cisl_uniforms_to_json(cisl_uniforms, title="Generated Shader"):
             # Float uniform -> range slider UI
             min_val = min_vals[0] if min_vals else 0.0
             max_val = max_vals[0] if max_vals else 1.0
-            step = 0.01
+            step_size = (max_val - min_val) / 1000
+            # step = 0.01
             
             json_uniforms.append({
                 "type": "float",
@@ -216,7 +217,7 @@ def convert_cisl_uniforms_to_json(cisl_uniforms, title="Generated Shader"):
                 "label": _format_label(uniform_name),
                 "min": float(min_val),
                 "max": float(max_val),
-                "step": step,
+                "step": step_size,
                 "set_name": set_name,
                 "default": float(init_value)
             })
@@ -250,13 +251,14 @@ def convert_cisl_uniforms_to_json(cisl_uniforms, title="Generated Shader"):
                 min_list.append(float(min_val))
                 max_list.append(float(max_val))
             
+            step_size = (max_val - min_val) / 1000
             json_uniforms.append({
                 "type": uniform_type,
                 "name": uniform_name,
                 "label": _format_label(uniform_name),
                 "min": min_list,
                 "max": max_list,
-                "step": 0.01,
+                "step": step_size,
                 "set_name": set_name,
                 "default": list(init_value) if hasattr(init_value, '__len__') else [float(init_value)] * vector_size
             })

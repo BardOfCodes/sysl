@@ -41,3 +41,12 @@ class RegisterMaterial(GLFunction):
     Apply the height field to the current height.
     """
     ...
+
+
+@register_symbol
+class RGBGrid3D(GLFunction):
+    ...
+
+@register_symbol
+class EncodedRGBGrid3D(MaterialV3):
+    ...

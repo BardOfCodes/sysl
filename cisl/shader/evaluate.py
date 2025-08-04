@@ -41,7 +41,7 @@ from .global_shader_context import GlobalShaderContext
 from .local_shader_context import SCENE_EXPR_PROPS, MATERIAL_EXPR_PROPS
 from .param_evaluate import _inline_parse_param_from_expr
 
-DEFAULT_BOUND_THRESHOLD = 0.01
+DEFAULT_BOUND_THRESHOLD = 0.02
 # V1 -> Just a single expression.
 def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr, settings: Dict[str, Any] | None = None, return_shader_context: bool=False) -> Union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
     if settings is None:
@@ -83,7 +83,7 @@ def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr, settings: Dict[s
 def rec_shader_eval(expression: gls.GLFunction | gls.GLExpr, global_sc):
     raise NotImplementedError(f"No shader evaluation for {type(expression)}")
 
-solid__to_type_map = {
+solid_to_type_map = {
     csls.MatSolidV1: "vec2",
     csls.MatSolidV2: "vec4",
     csls.MatSolidV3: "vec2", # Store Reference ID.
@@ -94,7 +94,7 @@ def eval_mat_solid(expression: csls.MatSolid, global_sc) -> GlobalShaderContext:
     sdf_expr = expression.args[0]
     material_expr = expression.args[1]
     func_name = expression.__class__.__name__
-    func_type = solid__to_type_map[type(expression)]
+    func_type = solid_to_type_map[type(expression)]
     assert isinstance(sdf_expr, gls.GLFunction) and isinstance(material_expr, gls.GLFunction), "SDF and Material must be GLFunctions"
     global_sc = rec_shader_eval(sdf_expr, global_sc)
     global_sc = rec_shader_eval(material_expr, global_sc)
@@ -115,12 +115,12 @@ def eval_mat_solid(expression: csls.MatSolid, global_sc) -> GlobalShaderContext:
 
 BOUNDED_SOLID_TEMPLATE = Template("""
 ${type} ${res_name};
-float bound_sdf = ${bounding_name}(${pos_latest});
-if (bound_sdf < ${bound_threshold}) {
+float ${res_name}_sdf = ${bounding_name}(${pos_latest});
+if (${res_name}_sdf < ${bound_threshold}) {
     ${res_name} = ${inner_name}(${pos_latest});
 } else {
     ${res_name} = ${type}(-1.0);
-    ${res_name}.x = bound_sdf;
+    ${res_name}.x = ${res_name}_sdf;
 }
 """)
 
@@ -201,8 +201,14 @@ def eval_encoded_sdf_grid_3d(expression: csls.EncodedSDFGrid3D, global_sc) -> Gl
     # basic version
     params = expression.args
     shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
-    texture_name = shader_params[0]
-    
+    sdf_texture_name = shader_params[0]
+    b64_data = shader_params[1]
+    tex_shape = [int(x) for x in list(params[2])] # shader_params will have it a vec2
+    tex_dtype = shader_params[3]
+    if len(shader_params) > 4:
+        bound_threshold = shader_params[4]
+    else:
+        bound_threshold = DEFAULT_BOUND_THRESHOLD
     cur_pos = global_sc.local_sc.pos_stack.pop()
     func_name = expression.__class__.__name__
     sdf_name = f"sdf_{global_sc.local_sc.res_sdf_count}"
@@ -213,23 +219,31 @@ def eval_encoded_sdf_grid_3d(expression: csls.EncodedSDFGrid3D, global_sc) -> Gl
     code_line = f"float {sdf_name} = {custom_func_name}({cur_pos});"
     global_sc.local_sc.add_codeline(code_line)
     global_sc.local_sc.add_dependency(func_name)
-    global_sc.add_shader_module(func_name, function_name=custom_func_name, texture_name=texture_name)
+    global_sc.add_shader_module(func_name, 
+        function_name=custom_func_name, 
+        sdf_texture_name=sdf_texture_name,
+        bound_threshold=bound_threshold
+    )
     global_sc.local_sc.res_sdf_stack.append(("float", sdf_name))
     # Register the texture info
-    texture_data = {'name': texture_name, 
-                    'shape': [int(x) for x in list(params[2])],
-                    'n_dim': 3,
-                    'dtype': shader_params[3],
-                    'data_b64': shader_params[1]}
+    texture_data = {'name': sdf_texture_name, 
+                    'data_b64': b64_data,
+                    'shape': tex_shape, 
+                    'dtype': tex_dtype,
+                    }
     global_sc.add_texture(texture_data)
     return global_sc
 
 
+
 @rec_shader_eval.register
-def eval_prim_sdf(expression: gls.SDFGrid3D, global_sc) -> GlobalShaderContext:
+def eval_sdf_grid_3d(expression: gls.SDFGrid3D, global_sc) -> GlobalShaderContext:
     # basic version
     raise NotImplementedError("Convert SDFGrid3D to EncodedSDFGrid3D first.")
 
+def eval_rgb_grid_3d(expression: csls.RGBGrid3D, global_sc) -> GlobalShaderContext:
+    # basic version
+    raise NotImplementedError("Convert RGBGrid3D to EncodedRGBGrid3D first.")
 
 @rec_shader_eval.register
 def eval_sdf_combinator(expression: COMBINATOR_TYPE, global_sc) -> GlobalShaderContext:
@@ -325,8 +339,8 @@ def eval_mod(expression: MOD_TYPE, global_sc) -> GlobalShaderContext:
         # This should be treated like Comb
         global_sc = rec_shader_eval(sub_expr, global_sc)
         (res_type, cur_res) = global_sc.local_sc.res_sdf_stack.pop()  # type: ignore
-        global_sc.local_sc.res_sdf_count += 1
         new_pos = f"res_{global_sc.local_sc.res_sdf_count}"
+        global_sc.local_sc.res_sdf_count += 1
         code_line = f"{res_type} {new_pos} = {func_name}({cur_res}, {shader_params});"
         global_sc.local_sc.add_codeline(code_line)
         input_format = (res_type, 1)
@@ -344,6 +358,7 @@ mat_to_type_map = {
     csls.MaterialV3: "float",
     csls.NonEmissiveMaterialV3: "float",
     csls.MatReference: "float",
+    csls.EncodedRGBGrid3D: "float",
 }
 
 @rec_shader_eval.register
@@ -372,6 +387,21 @@ mat_v3_non_emissive_template = Template("""
     mat_0.clearcoat = ${clearcoat};
     mat_0.metallic = ${metallic};""")
 
+rgb_grid_3d_template = Template("""
+    Material mat_0;
+    mat_0.albedo = vec3(0.0);
+    mat_0.metallic = ${metallic};
+    mat_0.roughness = ${roughness};
+    float box_sdf = Box3D(pos_0, vec3(1.0));
+    if (box_sdf < ${bound_threshold}) {
+        // pos_0 is in -1 to 1. Convert to 0 1
+        vec3 p_local = (pos_0 + 1.0) / 2.0;
+        p_local = p_local.zyx;
+        vec3 rgb = texture(${rgb_texture_name}, p_local).rgb;
+        mat_0.albedo = rgb;
+    }
+""")
+
 @rec_shader_eval.register
 def eval_mat_v3(expression: csls.MaterialV3, global_sc) -> GlobalShaderContext:
 
@@ -390,6 +420,33 @@ def eval_mat_v3(expression: csls.MaterialV3, global_sc) -> GlobalShaderContext:
             clearcoat=processed_params[2],
             metallic=processed_params[3]
         )
+    elif isinstance(expression, csls.EncodedRGBGrid3D):
+        
+        rgb_texture_name = processed_params[0]
+        b64_data = processed_params[1]
+        tex_shape = [int(x) for x in list(shader_params[2])] # shader_params will have it a vec2
+        tex_dtype = processed_params[3]
+        metallic = processed_params[4]
+        roughness = processed_params[5]
+        if len(processed_params) > 6:
+            bound_threshold = processed_params[6]
+        else:
+            bound_threshold = DEFAULT_BOUND_THRESHOLD
+        code_lines = rgb_grid_3d_template.substitute(
+            rgb_texture_name=rgb_texture_name,
+            b64_data=b64_data,
+            tex_shape=tex_shape,
+            tex_dtype=tex_dtype,
+            metallic=metallic,
+            roughness=roughness,
+            bound_threshold=bound_threshold
+        )
+        texture_data = {'name': rgb_texture_name, 
+                        'data_b64': b64_data,
+                        'shape': tex_shape, 
+                        'dtype': tex_dtype,
+                        }
+        global_sc.add_texture(texture_data)
     elif isinstance(expression, csls.MaterialV3):
         code_lines = mat_v3_template.substitute(
             albedo=processed_params[0],
@@ -398,6 +455,10 @@ def eval_mat_v3(expression: csls.MaterialV3, global_sc) -> GlobalShaderContext:
             clearcoat=processed_params[3],
             metallic=processed_params[4]
         )
+        global_sc.local_sc.dependencies.append("Box3D")
+    else:
+        raise NotImplementedError(f"Material {expression.__class__.__name__} not implemented")
+
     for code_line in code_lines.split("\n"):
         global_sc.local_sc.add_codeline(code_line)
     global_sc.local_sc.dependencies.append("BaseMaterials")
@@ -481,12 +542,3 @@ def eval_mat_register(expression: csls.RegisterMaterial, global_sc) -> GlobalSha
 
     return global_sc
 
-
-
-"""
-expr = csls.MatSolid(csls.Cuboid3D(0, 0, 0, 1, 1, 1), csls.SMPLMaterial(1.2))
-# Arbitrary CSG Expression -> with material. 
-# NAryn Unions
-# Smooth Unions
-# Then Add Union / Smooth Union on MaTSolids
-"""

@@ -175,6 +175,8 @@ class GlobalShaderContext:
                 code_lines.append(f"uniform sampler2D {var_name};")
             elif len(shape) == 3:
                 code_lines.append(f"uniform sampler3D {var_name};")
+            elif len(shape) == 4:
+                code_lines.append(f"uniform sampler3D {var_name};")
             else:
                 raise ValueError(f"Invalid texture shape: {shape}")
         
