@@ -1,129 +1,201 @@
-// --- Inline TWGL Texture Loader (supports 2D + 3D, float32 + float16) ---
+// --- Inline TWGL Texture Loader (supports 2D + 3D, float32, int32, uint8, single/RGB/RGBA) ---
 import * as pako from 'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.esm.mjs';
 
-// === Convert Float32Array to Uint16Array (half-float encoding) ===
-function float32ToFloat16Array(f32) {
-  const f16 = new Uint16Array(f32.length);
-  for (let i = 0; i < f32.length; i++) {
-    const x = f32[i];
-    const floatView = new Float32Array(1);
-    const intView = new Uint32Array(floatView.buffer);
-    floatView[0] = x;
-    const f = intView[0];
-
-    const sign = (f >> 31) & 0x1;
-    const exp = ((f >> 23) & 0xff) - 127;
-    const frac = f & 0x7fffff;
-
-    let hf;
-    if (exp < -14) {
-      hf = 0;  // too small, zero
-    } else if (exp > 15) {
-      hf = (sign << 15) | (0x1f << 10); // Inf
-    } else {
-      const new_exp = exp + 15;
-      const new_frac = frac >> 13;
-      hf = (sign << 15) | (new_exp << 10) | new_frac;
-    }
-
-    f16[i] = hf;
-  }
-  return f16;
-}
-
-function parseBase64AndDecompress(base64Str, dtype = "float32", descriptor = null) {
+async function parseBase64AndDecompress(base64Str, dtype) {
   const binaryStr = atob(base64Str);
   const byteArray = Uint8Array.from(binaryStr, c => c.charCodeAt(0));
-  const decompressed = pako.inflate(byteArray).buffer;
-
-  if (descriptor && descriptor.shape) {
-    const [C, D, H, W] = descriptor.shape;
-    const expectedLen = C * D * H * W;
-    const byteLen = dtype === "float16" ? expectedLen * 2 : expectedLen * 4;
-    if (decompressed.byteLength !== byteLen) {
-      console.warn(`⚠️ Expected ${byteLen} bytes but got ${decompressed.byteLength}`);
-    }
+  
+  // Yield control for large data to prevent blocking
+  if (byteArray.length > 1024 * 1024) { // 1MB threshold
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
-
-  if (dtype === "float32") {
-    return new Float32Array(decompressed);
-  } else if (dtype === "float16") {
-    return new Uint16Array(decompressed);  // ✅ Correct: raw fp16 bytes
-  } else {
-    throw new Error(`Unsupported dtype '${dtype}'`);
+  
+  const decompressed = pako.inflate(byteArray).buffer;
+  
+  switch(dtype) {
+    case 'float32': return new Float32Array(decompressed);
+    case 'int32': return new Int32Array(decompressed);
+    case 'uint8': return new Uint8Array(decompressed);
+    default: throw new Error(`Unsupported dtype: ${dtype}`);
   }
 }
-function createTextureFromDescriptor(gl, descriptor) {
-  const { name, shape, n_dim, dtype = "float32", data_b64 } = descriptor;
-  const [D1, D2, D3 = 1] = shape.slice(-3);
-  const data = parseBase64AndDecompress(data_b64, dtype);
-  const texelCount = D1 * D2 * D3;
 
-  if (data.length !== texelCount) {
-    console.warn(`⚠️ Texture '${name}' has unexpected length: expected ${texelCount}, got ${data.length}`);
+async function createTextureFromDescriptor(gl, descriptor) {
+  const { name, shape, dtype = "float32", data_b64 } = descriptor;
+  
+  // Extract channels and spatial dimensions
+  // Format: [H, W, C] or [H, W, D, C] - channels last
+  const numChannels = shape[shape.length - 1];
+  const spatialDims = shape.slice(0, -1);
+  const n_dim = spatialDims.length;
+  
+  if (![1, 2, 3, 4].includes(numChannels)) {
+    throw new Error(`Unsupported channel count: ${numChannels}. Supported: 1, 2, 3, 4`);
   }
-
-  // Check for extensions
-  const extHalfFloat = gl.getExtension("OES_texture_half_float");
-  const extLinearHalf = gl.getExtension("OES_texture_half_float_linear");
-  const extColorBufferHalf = gl.getExtension("EXT_color_buffer_half_float");
-
-  const format = gl.RED;
-  let internalFormat, type, filter;
-
-  if (dtype === "float32") {
-    internalFormat = gl.R32F;
+  
+  // Parse and decompress data (already in interleaved format)
+  const data = await parseBase64AndDecompress(data_b64, dtype);
+  
+  // Debug: Print basic data statistics
+  // Use efficient min/max calculation for large arrays to avoid stack overflow
+  
+  console.log(`📊 Texture '${name}' (${dtype}, ${numChannels}ch, ${n_dim}D):`);
+  console.log(`   📏 Data size: ${data.length} elements`);
+  {# console.log(`   📈 Value range: [${dataMin}, ${dataMax}]`); #}
+  console.log(`   🎯 Shape: [${shape.join(', ')}]`);
+  
+  // Validate data size
+  const expectedElements = spatialDims.reduce((a, b) => a * b, 1) * numChannels;
+  if (data.length !== expectedElements) {
+    console.warn(`⚠️ Texture '${name}': expected ${expectedElements} elements, got ${data.length}`);
+  }
+  
+  // Get WebGL parameters based on data type and channels
+  const isWebGL2 = gl.getParameter(gl.VERSION).includes("WebGL 2.0");
+  let internalFormat, format, type, filter;
+  
+  if (dtype === 'float32') {
+    // Check float texture support
+    if (!isWebGL2 && !gl.getExtension('OES_texture_float')) {
+      throw new Error('Float textures not supported - missing OES_texture_float extension');
+    }
+    
+    if (isWebGL2) {
+      const formats = [gl.R32F, gl.RG32F, gl.RGB32F, gl.RGBA32F];
+      const formatTypes = [gl.RED, gl.RG, gl.RGB, gl.RGBA];
+      const index = numChannels === 1 ? 0 : numChannels === 2 ? 1 : numChannels === 3 ? 2 : 3;
+      internalFormat = formats[index];
+      format = formatTypes[index];
+    } else {
+      const formats = [gl.LUMINANCE, gl.LUMINANCE_ALPHA, gl.RGB, gl.RGBA];
+      const index = numChannels === 1 ? 0 : numChannels === 2 ? 1 : numChannels === 3 ? 2 : 3;
+      internalFormat = format = formats[index];
+    }
     type = gl.FLOAT;
     filter = gl.getExtension('OES_texture_float_linear') ? gl.LINEAR : gl.NEAREST;
-  } else if (dtype === "float16") {
-    if (!extHalfFloat || !extColorBufferHalf) {
-      throw new Error("Half-float not supported by this browser / GPU");
+    
+  } else if (dtype === 'int32') {
+    if (!isWebGL2) {
+      throw new Error('Integer textures require WebGL 2.0');
     }
-    internalFormat = gl.R16F;
-    type = extHalfFloat.HALF_FLOAT_OES;
-    filter = extLinearHalf ? gl.LINEAR : gl.NEAREST;
+    const intFormats = [gl.R32I, gl.RG32I, gl.RGB32I, gl.RGBA32I];
+    const intFormatTypes = [gl.RED_INTEGER, gl.RG_INTEGER, gl.RGB_INTEGER, gl.RGBA_INTEGER];
+    const index = numChannels === 1 ? 0 : numChannels === 2 ? 1 : numChannels === 3 ? 2 : 3;
+    internalFormat = intFormats[index];
+    format = intFormatTypes[index];
+    type = gl.INT;
+    filter = gl.NEAREST;
+    
+  } else if (dtype === 'uint8') {
+    // Check WebGL2 requirement for 3D textures
+    if (n_dim === 3 && !isWebGL2) {
+      throw new Error('3D uint8 textures require WebGL 2.0');
+    }
+    
+    if (isWebGL2) {
+      // For single/dual channel textures in WebGL2, ensure support
+      if (numChannels <= 2) {
+        const redSupport = gl.getParameter(gl.MAX_TEXTURE_SIZE) > 0; // Basic check
+        console.log(`🔍 WebGL2 ${numChannels}-channel uint8 texture support check: ${redSupport}`);
+      }
+      
+      // WebGL2 format mapping: 1=R8, 2=RG8, 3=RGB8, 4=RGBA8
+      const formatMap = {
+        1: { internal: gl.R8, format: gl.RED },
+        2: { internal: gl.RG8, format: gl.RG },
+        3: { internal: gl.RGB8, format: gl.RGB },
+        4: { internal: gl.RGBA8, format: gl.RGBA }
+      };
+      internalFormat = formatMap[numChannels].internal;
+      format = formatMap[numChannels].format;
+    } else {
+      // WebGL1 fallback - check if we have necessary extensions
+      if (numChannels <= 2) {
+        console.log(`⚠️  WebGL1 ${numChannels}-channel uint8 - using ${numChannels === 1 ? 'LUMINANCE' : 'LUMINANCE_ALPHA'} format`);
+      }
+      
+      // WebGL1 format mapping: 1=LUMINANCE, 2=LUMINANCE_ALPHA, 3=RGB, 4=RGBA
+      const formatMap = {
+        1: gl.LUMINANCE,
+        2: gl.LUMINANCE_ALPHA,
+        3: gl.RGB,
+        4: gl.RGBA
+      };
+      internalFormat = format = formatMap[numChannels];
+    }
+    type = gl.UNSIGNED_BYTE;
+    filter = gl.LINEAR;
   } else {
-    throw new Error(`Unsupported dtype '${dtype}'`);
+    throw new Error(`Unsupported dtype: ${dtype}`);
   }
-
+  
+  // Debug: Print WebGL format information
+  console.log(`🔧 WebGL formats for '${name}':`);
+  console.log(`   📝 Internal: 0x${internalFormat.toString(16)} (${internalFormat})`);
+  console.log(`   📝 Format: 0x${format.toString(16)} (${format})`);
+  console.log(`   📝 Type: 0x${type.toString(16)} (${type})`);
+  console.log(`   🎛️  Filter: 0x${filter.toString(16)} (${filter})`);
+  console.log(`   🌐 WebGL2: ${isWebGL2}`);
+  
+  // Create texture
   const tex = gl.createTexture();
   if (!tex) throw new Error(`Failed to create texture '${name}'`);
-
+  
   const target = (n_dim === 3) ? gl.TEXTURE_3D : gl.TEXTURE_2D;
   gl.bindTexture(target, tex);
+  
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);  // 👈🏽 This line is essential for single-channel uint8
 
+  // Set texture parameters
+  gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  
   if (n_dim === 3) {
-    gl.texImage3D(target, 0, internalFormat, D3, D2, D1, 0, format, type, data);
-    gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, filter);
-    gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, filter);
-    gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const [depth, height, width] = spatialDims;
     gl.texParameteri(target, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+    gl.texImage3D(target, 0, internalFormat, width, height, depth, 0, format, type, data);
   } else if (n_dim === 2) {
-    gl.texImage2D(target, 0, internalFormat, D2, D1, 0, format, type, data);
-    gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, filter);
-    gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, filter);
-    gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const [height, width] = spatialDims;
+    gl.texImage2D(target, 0, internalFormat, width, height, 0, format, type, data);
   } else {
-    throw new Error(`Unsupported texture dimension '${n_dim}'`);
+    throw new Error(`Unsupported dimensions: ${n_dim}. Only 2D and 3D textures supported`);
   }
-
+  
   gl.bindTexture(target, null);
+  
+  // Debug: Check for WebGL errors after texture creation
+  const error = gl.getError();
+  if (error !== gl.NO_ERROR) {
+    console.error(`❌ WebGL error after creating texture '${name}': 0x${error.toString(16)}`);
+  } else {
+    console.log(`✅ Successfully created texture '${name}' (${target === gl.TEXTURE_3D ? '3D' : '2D'})`);
+  }
+  
   return tex;
 }
 
 async function loadTextures(gl, textureRegistry) {
   console.log("🎨 Loading textures...");
   const result = {};
+  
   for (const [texName, descriptor] of Object.entries(textureRegistry)) {
     try {
-      const tex = createTextureFromDescriptor(gl, descriptor);
+      const tex = await createTextureFromDescriptor(gl, descriptor);
       result[texName] = tex;
-      console.log(`✅ Loaded texture '${texName}'`);
+      console.log(`✅ Loaded '${texName}'`);
+      
+      // Yield control between texture loads to prevent blocking
+      await new Promise(resolve => setTimeout(resolve, 0));
     } catch (err) {
-      console.error(`❌ Error loading texture '${texName}':`, err);
+      console.error(`❌ Failed to load texture '${texName}':`, err.message);
     }
   }
+  
   return result;
 }
+
+// === Main exports ===
+// loadTextures(gl, textureRegistry) - Load all textures from registry
+// createTextureFromDescriptor(gl, descriptor) - Create single texture from descriptor

@@ -1,5 +1,20 @@
 # CISL: Constructive Implicit Scene Language
 
+## TODO:
+
+
+
+1. Impove the local shader context manager - Currently its all over the place. 
+
+2. Provide the Uint8 encoding option for field. 
+
+3. Stracer4 with local coordinate frame strcuts. 
+
+4. Stracer5 with transparency / translucency. 
+
+6. Add a Tool shading / edges only version.
+
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 

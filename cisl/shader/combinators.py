@@ -358,6 +358,48 @@ def smooth_union_factory():
 
 SMMap["SmoothUnion"] = smooth_union_factory
 
+### GeomOnlySmoothUnion
+
+geom_only_smooth_union_float_code = """
+float GeomOnlySmoothUnion( float res1, float res2, float k )
+{
+    float h = clamp( 0.5 + 0.5*(res2 - res1)/k, 0.0, 1.0 );
+    return mix( res2, res1, h ) - k*h*(1.0-h);
+}
+"""
+
+geom_only_smooth_union_vec_code = Template("""
+${type} GeomOnlySmoothUnion( ${type} res1, ${type} res2, float k )
+{
+    ${type} out_res;
+    if (res1.x < res2.x) {
+        out_res = res1;
+    }else{
+        out_res = res2;
+    }
+
+    float h = clamp( 0.5 + 0.5*(res2.x - res1.x)/k, 0.0, 1.0 );
+    float new_x = mix( res2.x, res1.x, h ) - k*h*(1.0-h);
+    out_res.x = new_x;
+    return out_res;
+}
+""")
+
+geom_only_smooth_union_arity_map = {
+    ("float", 2): geom_only_smooth_union_float_code,
+    ("vec2", 2): geom_only_smooth_union_vec_code.substitute(type="vec2"),
+    ("vec3", 2): geom_only_smooth_union_vec_code.substitute(type="vec3"),
+    ("vec4", 2): geom_only_smooth_union_vec_code.substitute(type="vec4"),
+}
+
+def geom_only_smooth_union_factory():
+    name = "GeomOnlySmoothUnion"
+    module = FixedArityShaderModule(name, geom_only_smooth_union_arity_map)
+    return module
+
+SMMap["GeomOnlySmoothUnion"] = geom_only_smooth_union_factory
+
+
 
 ## SMOOTH INTERSECTION:
 smooth_intersection_float_code = """
@@ -512,3 +554,39 @@ def onion_factory():
     return module
 
 SMMap["Onion3D"] = onion_factory
+
+
+# Neg Only
+neg_only_onion_float_code = """
+float NegOnlyOnion3D( float res, float k )
+{
+    if (res <= 0.0){
+        res = abs(res) - k;
+    }
+    return res;
+}
+"""
+neg_only_onion_vec_code = Template("""
+${type} NegOnlyOnion3D( ${type} res, float k )
+{
+    if (res.x <= 0.0){
+        res.x = abs(res.x) - k;
+    }
+    return res;
+}
+""")
+
+neg_only_onion_arity_map = {
+    ("float", 1): neg_only_onion_float_code,
+    ("vec2", 1): neg_only_onion_vec_code.substitute(type="vec2"),
+    ("vec3", 1): neg_only_onion_vec_code.substitute(type="vec3"),
+    ("vec4", 1): neg_only_onion_vec_code.substitute(type="vec4"),
+}
+
+def neg_only_onion_factory():
+    name = "NegOnlyOnion3D"
+    module = FixedArityShaderModule(name, neg_only_onion_arity_map)
+    return module
+
+SMMap["NegOnlyOnion3D"] = neg_only_onion_factory
+

@@ -12,7 +12,7 @@
 # I need to help export the shaders -> just runnable snippets, and also animation outputs. 
 import sys
 import sympy as sp
-from typing import Dict, Any, Tuple, Union
+from typing import Dict, Any, Tuple, Union as type_union
 import geolipi.symbolic as gls
 from string import Template
 if sys.version_info >= (3, 11):
@@ -43,7 +43,7 @@ from .param_evaluate import _inline_parse_param_from_expr
 
 DEFAULT_BOUND_THRESHOLD = 0.02
 # V1 -> Just a single expression.
-def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr, settings: Dict[str, Any] | None = None, return_shader_context: bool=False) -> Union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
+def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr, settings: Dict[str, Any] | None = None, return_shader_context: bool=False) -> type_union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
     if settings is None:
         settings = {
         "render_mode": "v3",
@@ -112,6 +112,51 @@ def eval_mat_solid(expression: csls.MatSolid, global_sc) -> GlobalShaderContext:
     global_sc.add_shader_module(func_name)
     global_sc.local_sc.res_sdf_stack.append((func_type, res_name))
     return global_sc
+
+# For V3, allow graph for material local coordinate frame.
+
+@rec_shader_eval.register
+def eval_mat_solid(expression: csls.MatSolidV3, global_sc) -> GlobalShaderContext:
+    sdf_expr = expression.args[0]
+    material_expr = expression.args[1]
+    func_name = expression.__class__.__name__
+    func_type = solid_to_type_map[type(expression)]
+    assert isinstance(sdf_expr, gls.GLFunction) and isinstance(material_expr, gls.GLFunction), "SDF and Material must be GLFunctions"
+    global_sc = rec_shader_eval(sdf_expr, global_sc)
+    # Here we change it. 
+
+    mat_name = f"mat_{global_sc.material_count}"
+    mat_function_name = f"{mat_name}_func"
+    mat_index = global_sc.material_count
+    global_sc.push_codebook(mat_function_name, MATERIAL_EXPR_PROPS)
+
+    global_sc = rec_shader_eval(material_expr, global_sc)
+
+    global_sc.resolve_codebook()
+    global_sc.pop_codebook()
+    code_line = f"float {mat_name} = {float(mat_index)};"
+    global_sc.material_count += 1
+    global_sc.local_sc.add_codeline(code_line)
+    global_sc.material_stack.append(mat_name)
+    global_sc.material_registry.update({mat_function_name: mat_index})
+
+    
+    assert len(global_sc.local_sc.res_sdf_stack) > 0, "No SDF in the stack"
+    res_type, final_sdf = global_sc.local_sc.res_sdf_stack.pop()  # type: ignore
+    valid_types = ["float", func_type]
+    assert res_type in valid_types, f"Invalid result type {res_type} for {func_name}"
+    final_material = global_sc.material_stack.pop()
+    # Add it back to stack. 
+    # This version only works in the basic version.
+    res_name = f"res_{global_sc.local_sc.res_sdf_count}"
+    global_sc.local_sc.res_sdf_count += 1
+    global_sc.local_sc.add_codeline(f"{func_type} {res_name} = {func_name}({final_sdf}, {final_material});")
+    global_sc.local_sc.add_dependency(func_name)
+    global_sc.add_shader_module(func_name)
+    global_sc.local_sc.res_sdf_stack.append((func_type, res_name))
+    return global_sc
+
+
 
 BOUNDED_SOLID_TEMPLATE = Template("""
 ${type} ${res_name};
@@ -205,10 +250,7 @@ def eval_encoded_sdf_grid_3d(expression: csls.EncodedSDFGrid3D, global_sc) -> Gl
     b64_data = shader_params[1]
     tex_shape = [int(x) for x in list(params[2])] # shader_params will have it a vec2
     tex_dtype = shader_params[3]
-    if len(shader_params) > 4:
-        bound_threshold = shader_params[4]
-    else:
-        bound_threshold = DEFAULT_BOUND_THRESHOLD
+    bound_threshold = shader_params[4]
     cur_pos = global_sc.local_sc.pos_stack.pop()
     func_name = expression.__class__.__name__
     sdf_name = f"sdf_{global_sc.local_sc.res_sdf_count}"
@@ -392,33 +434,40 @@ rgb_grid_3d_template = Template("""
     mat_0.albedo = vec3(0.0);
     mat_0.metallic = ${metallic};
     mat_0.roughness = ${roughness};
-    float box_sdf = Box3D(pos_0, vec3(1.0));
+    float box_sdf = Box3D(${pos_latest}, vec3(1.0));
     if (box_sdf < ${bound_threshold}) {
         // pos_0 is in -1 to 1. Convert to 0 1
-        vec3 p_local = (pos_0 + 1.0) / 2.0;
+        vec3 p_local = (${pos_latest} + 1.0) / 2.0;
         p_local = p_local.zyx;
         vec3 rgb = texture(${rgb_texture_name}, p_local).rgb;
         mat_0.albedo = rgb;
     }
 """)
 
+mat_v3_reference_template = Template("""
+    Material mat_0 = ${mat_name}(${pos_latest}, n_0);
+""")
+
 @rec_shader_eval.register
 def eval_mat_v3(expression: csls.MaterialV3, global_sc) -> GlobalShaderContext:
 
-    mat_name = f"mat_{global_sc.material_count}"
-    mat_function_name = f"{mat_name}_func"
-    mat_index = global_sc.material_count
+    # mat_name = f"mat_{global_sc.material_count}"
+    # mat_function_name = f"{mat_name}_func"
+    # mat_index = global_sc.material_count
     # NEEd to create the function 
     # Create the function in a separate context.
-    global_sc.push_codebook(mat_function_name, MATERIAL_EXPR_PROPS)
+    # global_sc.push_codebook(mat_function_name, MATERIAL_EXPR_PROPS)
     shader_params = expression.args[:]
     processed_params = _inline_parse_param_from_expr(expression, shader_params, global_sc)
+    cur_pos = global_sc.local_sc.pos_stack.pop()
+
     if isinstance(expression, csls.NonEmissiveMaterialV3):
         code_lines = mat_v3_non_emissive_template.substitute(
             albedo=processed_params[0],
             roughness=processed_params[1],
             clearcoat=processed_params[2],
-            metallic=processed_params[3]
+            metallic=processed_params[3],
+            pos_latest=cur_pos
         )
     elif isinstance(expression, csls.EncodedRGBGrid3D):
         
@@ -428,10 +477,7 @@ def eval_mat_v3(expression: csls.MaterialV3, global_sc) -> GlobalShaderContext:
         tex_dtype = processed_params[3]
         metallic = processed_params[4]
         roughness = processed_params[5]
-        if len(processed_params) > 6:
-            bound_threshold = processed_params[6]
-        else:
-            bound_threshold = DEFAULT_BOUND_THRESHOLD
+        bound_threshold = processed_params[6]
         code_lines = rgb_grid_3d_template.substitute(
             rgb_texture_name=rgb_texture_name,
             b64_data=b64_data,
@@ -439,7 +485,8 @@ def eval_mat_v3(expression: csls.MaterialV3, global_sc) -> GlobalShaderContext:
             tex_dtype=tex_dtype,
             metallic=metallic,
             roughness=roughness,
-            bound_threshold=bound_threshold
+            bound_threshold=bound_threshold,
+            pos_latest=cur_pos
         )
         texture_data = {'name': rgb_texture_name, 
                         'data_b64': b64_data,
@@ -447,13 +494,21 @@ def eval_mat_v3(expression: csls.MaterialV3, global_sc) -> GlobalShaderContext:
                         'dtype': tex_dtype,
                         }
         global_sc.add_texture(texture_data)
+    elif isinstance(expression, csls.MatReference):
+        mat_name = processed_params[0]
+        code_lines = mat_v3_reference_template.substitute(
+            mat_name=mat_name,
+            pos_latest=cur_pos
+        )
+        global_sc.local_sc.dependencies.append(mat_name)
     elif isinstance(expression, csls.MaterialV3):
         code_lines = mat_v3_template.substitute(
             albedo=processed_params[0],
             emissive=processed_params[1],
             roughness=processed_params[2],
             clearcoat=processed_params[3],
-            metallic=processed_params[4]
+            metallic=processed_params[4],
+            pos_latest=cur_pos
         )
         global_sc.local_sc.dependencies.append("Box3D")
     else:
@@ -463,38 +518,38 @@ def eval_mat_v3(expression: csls.MaterialV3, global_sc) -> GlobalShaderContext:
         global_sc.local_sc.add_codeline(code_line)
     global_sc.local_sc.dependencies.append("BaseMaterials")
     global_sc.local_sc.res_sdf_stack.append(("Material", "mat_0"))
-    global_sc.resolve_codebook()
-    global_sc.pop_codebook()
-    # ASSIGN INDEX here.
-    code_line = f"{mat_to_type_map[type(expression)]} {mat_name} = {float(mat_index)};"
+    # global_sc.resolve_codebook()
+    # global_sc.pop_codebook()
+    # # ASSIGN INDEX here.
+    # code_line = f"{mat_to_type_map[type(expression)]} {mat_name} = {float(mat_index)};"
 
-    global_sc.material_count += 1
-    global_sc.local_sc.add_codeline(code_line)
-    global_sc.material_stack.append(mat_name)
-    global_sc.material_registry.update({mat_function_name: mat_index})
+    # global_sc.material_count += 1
+    # global_sc.local_sc.add_codeline(code_line)
+    # global_sc.material_stack.append(mat_name)
+    # global_sc.material_registry.update({mat_function_name: mat_index})
     return global_sc
 
-@rec_shader_eval.register
-def eval_mat_ref(expression: csls.MatReference, global_sc) -> GlobalShaderContext:
+# @rec_shader_eval.register
+# def eval_mat_ref(expression: csls.MatReference, global_sc) -> GlobalShaderContext:
 
-    shader_params = expression.args[:]
-    processed_params = _inline_parse_param_from_expr(expression, shader_params, global_sc)
-    mat_name = processed_params[0]
-    # NEEd to create the function 
-    # Create the function in a separate context.
-    mat_function_name = f"{mat_name}"
-    if mat_function_name in global_sc.material_registry:
-        mat_index = global_sc.material_registry[mat_function_name]
-    else:
-        mat_index = global_sc.material_count
-        global_sc.material_count += 1
-        global_sc.material_registry.update({mat_function_name: mat_index})
+#     shader_params = expression.args[:]
+#     processed_params = _inline_parse_param_from_expr(expression, shader_params, global_sc)
+#     mat_name = processed_params[0]
+#     # NEEd to create the function 
+#     # Create the function in a separate context.
+#     mat_function_name = f"{mat_name}"
+#     if mat_function_name in global_sc.material_registry:
+#         mat_index = global_sc.material_registry[mat_function_name]
+#     else:
+#         mat_index = global_sc.material_count
+#         global_sc.material_count += 1
+#         global_sc.material_registry.update({mat_function_name: mat_index})
 
-    # ASSIGN INDEX here.
-    code_line = f"{mat_to_type_map[type(expression)]} {mat_name} = {float(mat_index)};"
-    global_sc.local_sc.add_codeline(code_line)
-    global_sc.material_stack.append(mat_name)
-    return global_sc
+#     # ASSIGN INDEX here.
+#     code_line = f"{mat_to_type_map[type(expression)]} {mat_name} = {float(mat_index)};"
+#     global_sc.local_sc.add_codeline(code_line)
+#     global_sc.material_stack.append(mat_name)
+#     return global_sc
 
 @rec_shader_eval.register
 def eval_mat_register(expression: csls.RegisterMaterial, global_sc) -> GlobalShaderContext:

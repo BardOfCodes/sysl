@@ -61,3 +61,15 @@ class RegisterState(GLFunction):
 @register_symbol
 class EncodedSDFGrid3D(GLFunction):
     ...
+
+@register_symbol
+class LowPrecisionSDFGrid3D(GLFunction):
+    ...
+
+@register_symbol
+class EncodedLowPrecisionSDFGrid3D(EncodedSDFGrid3D):
+    ...
+
+
+class GeomOnlySmoothUnion(gls.SmoothUnion):
+    ...

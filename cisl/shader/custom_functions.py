@@ -1,17 +1,21 @@
 # SDFGrid3D
 # Custom nodes.
+import numpy as np
 from .shader_module import register_shader_module, ShaderModule, SMMap
 from string import Template
 
+LOW_PRECISION_RANGE = np.sqrt(0.5)
+
 class CustomFunctionShaderModule(ShaderModule):
 
-    def __init__(self, template, *args, **kwargs):
+    def __init__(self, name=None, template=None, *args, **kwargs):
         code = None
         dependencies = []
         vardeps = []
         inputs = None
         outputs = None
-        name = "CustomFunction"
+        if name is None:
+          name = "CustomFunction"
         super().__init__(name, code, dependencies=dependencies, vardeps=vardeps, inputs=inputs, outputs=outputs)
         self.function_names = set()
         self.template = template
@@ -38,11 +42,13 @@ float ${func_name}( vec3 p )
 }""")
 
 class EncodedSDFGrid3D(CustomFunctionShaderModule):
-    def __init__(self, *args, **kwargs):
-        template = EncodedSDFGrid3DTemplate
-        name = "EncodedSDFGrid3D"
-        super().__init__(template, *args, **kwargs)
-        self.name = "EncodedSDFGrid3D"
+    def __init__(self, name=None,template=None, *args, **kwargs):
+        if template is None:
+            template = EncodedSDFGrid3DTemplate
+        if name is None:
+            name = "EncodedSDFGrid3D"
+
+        super().__init__(name, template, *args, **kwargs)
         self.dependencies = ["Box3D"]
         self.bound_thresholds = []
         self.sdf_texture_names = []
@@ -74,9 +80,55 @@ class EncodedSDFGrid3D(CustomFunctionShaderModule):
         return self.code
 
 
-#  Custom material function. 
 SMMap["EncodedSDFGrid3D"] = EncodedSDFGrid3D
 
+EncodedLowPrecisionSDFGrid3DTemplate = Template("""
+float ${func_name}( vec3 p )
+{
+  float box_sdf = Box3D(p, vec3(1.0));
+  if (box_sdf < ${bound_threshold}) {
+    // p is in -1 to 1. Convert to 0–1 and flip to ZYX layout
+    vec3 p_local = (p + 1.0) / 2.0;
+    p_local = p_local.zyx;
+
+    // vec2 rg = texture(${texture_name}, p_local).rg;
+    // float coarse_bin = floor(rg.r * 255.0);
+    // float fine_bin   = floor(rg.g * 255.0);
+
+    float r = texture(${texture_name}, p_local).r;
+    float sdf = r * (2.0 * ${low_precision_range}) - ${low_precision_range};  // maps to [-√3, √3]
+
+    // float bin_size = (2.0 * ${low_precision_range}) / 256.0;
+    // float sdf = coarse_bin * bin_size + (fine_bin / 256.0) * bin_size - ${low_precision_range};
+    // float sdf = coarse_bin * bin_size; // + (fine_bin / 256.0) * bin_size - ${low_precision_range};
+    return sdf;
+  } else {
+    return box_sdf;
+  }
+}
+""")
+
+class EncodedLowPrecisionSDFGrid3D(EncodedSDFGrid3D):
+    def __init__(self, *args, **kwargs):
+        template = EncodedLowPrecisionSDFGrid3DTemplate
+        name = "EncodedLowPrecisionSDFGrid3D"
+        super().__init__(name, template, *args, **kwargs)
+        self.dependencies = ["Box3D"]
+        self.bound_thresholds = []
+        self.sdf_texture_names = []
+        self.template = EncodedLowPrecisionSDFGrid3DTemplate
+
+    def generate_code(self):
+        code_parts = []
+        for ind, function_name in enumerate(self.function_names):
+            code = self.template.substitute(texture_name=self.sdf_texture_names[ind], func_name=function_name, 
+                                            bound_threshold=self.bound_thresholds[ind], low_precision_range=LOW_PRECISION_RANGE)
+            code_parts.append(code)
+        self.code = "\n".join(code_parts)
+
+SMMap["EncodedLowPrecisionSDFGrid3D"] = EncodedLowPrecisionSDFGrid3D
+
+#  Custom material function. 
 
 EncodedRGBGrid3DTemplate = Template("""
 Material ${func_name}( vec3 p, vec3 n)
@@ -101,7 +153,7 @@ Material ${func_name}( vec3 p, vec3 n)
   }
 }""")
 
-class EncodedRGBGrid3D(CustomFunctionShaderModule):
+class EncodedRGBGrid3D(EncodedSDFGrid3D):
     def __init__(self, *args, **kwargs):
         template = EncodedRGBGrid3DTemplate
         name = "EncodedRGBGrid3D"
@@ -144,9 +196,5 @@ class EncodedRGBGrid3D(CustomFunctionShaderModule):
             code_parts.append(code)
         self.code = "\n".join(code_parts)
 
-    def emit_code(self):
-        if self.code is None:
-            self.generate_code()
-        return self.code
 
 SMMap["EncodedRGBGrid3D"] = EncodedRGBGrid3D

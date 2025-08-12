@@ -44,7 +44,7 @@ UNIFORMS = {
         'type': 'float', "init_value": 5.0,
         "min": [0.0], "max": [10.0]},
     "cameraAngleX": {
-        'type': 'float', "init_value": np.pi/4,
+        'type': 'float', "init_value": np.pi/8,
         "min": [-np.pi], "max": [np.pi]},
     "cameraAngleY": {
         'type': 'float', "init_value": np.pi/6,
