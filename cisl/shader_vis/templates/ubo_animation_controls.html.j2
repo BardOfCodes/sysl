@@ -1,0 +1,116 @@
+<!-- UBO Animation Controls -->
+{% if enable_ubo_animation and ubo_uniforms %}
+{% for ubo_name, ubo_data in ubo_uniforms.items() %}
+<!-- Debug: UBO {{ ubo_name }}, n_params: {{ ubo_data.n_params }}, type: {{ ubo_data.type }} -->
+{% if ubo_data.n_params and ubo_data.n_params > 1 %}
+<details open class="bg-blue-50 border border-blue-300 rounded-lg">
+  <summary class="px-3 py-2 font-medium text-blue-800 cursor-pointer hover:bg-blue-100">
+    UBO Animation Control ({{ ubo_data.n_params }} states)
+  </summary>
+  <div class="px-3 pb-3 space-y-4">
+    
+    <!-- Animation State Slider -->
+    <div class="space-y-2">
+      <label for="ubo-time-slider" class="block text-sm font-medium text-blue-700">
+        Animation State: <span id="ubo-time-display">0.0</span>
+      </label>
+      <input 
+        type="range" 
+        id="ubo-time-slider"
+        min="0" 
+        max="{{ ubo_data.n_params - 1 }}" 
+        step="0.01" 
+        value="0"
+        class="w-full h-2 bg-blue-200 rounded-lg appearance-none cursor-pointer slider-thumb"
+        data-ubo-name="{{ ubo_name }}"
+        data-max-state="{{ ubo_data.n_params - 1 }}"
+      />
+      <div class="flex justify-between text-xs text-blue-600">
+        <span>State 0</span>
+        <span>State {{ ubo_data.n_params - 1 }}</span>
+      </div>
+    </div>
+    
+    <!-- Interpolation Mode -->
+    <div class="space-y-2">
+      <label class="block text-sm font-medium text-blue-700">
+        Interpolation Mode:
+      </label>
+      <div class="flex space-x-4">
+        <label class="flex items-center">
+          <input 
+            type="radio" 
+            name="ubo-interpolation-mode" 
+            value="strict" 
+            class="mr-2 text-blue-600"
+          />
+          <span class="text-sm">Strict (Rounded)</span>
+        </label>
+        <label class="flex items-center">
+          <input 
+            type="radio" 
+            name="ubo-interpolation-mode" 
+            value="interpolated"
+            checked
+            class="mr-2 text-blue-600"
+          />
+          <span class="text-sm">Interpolated</span>
+        </label>
+      </div>
+    </div>
+    
+    <!-- Animation Play Controls -->
+    <div class="space-y-3 border-t border-blue-200 pt-3">
+      <label class="block text-sm font-medium text-blue-700">
+        Animation Playback:
+      </label>
+      
+      <!-- Play/Pause and Reset Controls -->
+      <div class="flex items-center space-x-2">
+        <button
+          id="ubo-play-button"
+          class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition-colors"
+          onclick="toggleUBOAnimation()"
+        >
+          Play
+        </button>
+        
+        <button
+          id="ubo-reset-button"
+          class="px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded text-sm transition-colors"
+          onclick="resetUBOAnimation()"
+        >
+          Reset
+        </button>
+        
+        <div class="flex-1 ml-3">
+          <label class="block text-xs text-blue-600 mb-1">
+            Speed: <span id="ubo-speed-value">1.0</span>x
+          </label>
+          <input
+            type="range"
+            id="ubo-speed-slider"
+            min="0.1"
+            max="5.0"
+            step="0.1"
+            value="1.0"
+            class="w-full h-1 bg-blue-200 rounded-lg appearance-none cursor-pointer"
+          />
+        </div>
+      </div>
+      
+      <!-- Animation Status Display -->
+      <div class="text-xs">
+        <span id="ubo-play-status" class="text-blue-600">Ready to play</span>
+        <span id="ubo-loop-indicator" class="text-gray-500 ml-2"></span>
+      </div>
+    </div>
+    
+    <!-- Animation Status -->
+    <div id="ubo-animation-status" class="text-xs text-blue-600" style="display: none;"></div>
+    
+  </div>
+</details>
+{% endif %}
+{% endfor %}
+{% endif %}

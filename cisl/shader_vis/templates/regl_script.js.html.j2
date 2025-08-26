@@ -1,17 +1,36 @@
 <!-- ReGL Shader Script -->
 <script type="module">
 
+{% if ubo_uniforms %}
+  {% include "ubo_loader.js.html.j2" %}
+{% endif %}
+
 {% include "common_script.js.html.j2" %}
+
+{% if allow_singular_ubo_edit %}
+  {% include "ubo_editor.js.html.j2" %}
+{% endif %}
+
+{% if enable_ubo_animation %}
+  {% include "ubo_animation.js.html.j2" %}
+{% endif %}
 
   // === ReGL-specific code ===
   const regl = createREGL({ gl });
+
+  // Extract UBO registry from Jinja
+  const uboRegistry = {
+    {% for uboname, ubodata in ubo_uniforms.items() %}
+    "{{ uboname }}": {{ ubodata | tojson }},
+    {% endfor %}
+  };
 
   // Variable to hold the current draw function
   let currentDraw = null;
 
   // Function to create/recreate the draw function
   function createDrawFunction(fragmentShader) {
-    return regl({
+    const command = regl({
       vert: `#version 300 es
       precision mediump float;
       in vec2 position;
@@ -33,13 +52,24 @@
       uniforms: {
         time: () => performance.now() / 1000,
         {% for uniform in underlying_uniforms %}
+        {% if uniform.type != "uniform_buffer" %}
         {{ uniform.name }}: () => uniformValues.{{ uniform.name }},
+        {% endif %}
         {% endfor %}
       },
 
       primitive: 'triangle strip',
       count: 4
     });
+    
+    {% if ubo_uniforms %}
+    // Set up UBO bindings for ReGL (done after command creation)
+    if (window.UBOLoader) {
+      UBOLoader.setupUBOBindings(regl._gl, command._program);
+    }
+    {% endif %}
+    
+    return command;
   }
 
   {% if show_controls %}
@@ -74,6 +104,13 @@
       console.error('Error resetting to original shader:', error);
     }
   });
+  {% endif %}
+
+  // Initialize UBOs first
+  {% if ubo_uniforms %}
+  if (window.UBOLoader) {
+    UBOLoader.initializeUBOs(regl._gl, uboRegistry);
+  }
   {% endif %}
 
   // Initialize the draw function

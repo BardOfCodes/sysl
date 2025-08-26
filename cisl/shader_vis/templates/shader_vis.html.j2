@@ -1,15 +1,13 @@
 {% extends "base.html.j2" %}
 {% block content %}
 
-<div class="container mx-auto px-4 space-y-4">
+<div class="w-full min-h-screen">
   <!-- Interactive Shader Visualizer -->
-  <details open class="border rounded bg-white shadow-sm">
-    <summary class="px-4 py-2 bg-gray-100 cursor-pointer font-medium">
-    </summary>
-    <div class="p-4 bg-white space-y-6">
+  <div class="w-full h-full bg-white">
+    <div class="w-full h-full {% if layout_horizontal %}flex flex-row gap-6 p-4{% else %}space-y-6 p-4{% endif %}">
       
-      <!-- Canvas Area - First Row -->
-      <div class="flex justify-center">
+      <!-- Canvas Area -->
+      <div class="{% if layout_horizontal %}flex-shrink-0{% else %}flex justify-center{% endif %}">
         <div id="canvas-container" class="relative bg-black rounded-lg overflow-hidden shadow-lg" style="width: 512px; height: 512px;">
           <canvas
             id="glcanvas"
@@ -18,13 +16,13 @@
         </div>
       </div>
 
-      <!-- Controls Area - Second Row -->
-      <div class="w-full">
+      <!-- Controls Area -->
+      <div class="{% if layout_horizontal %}flex-1 {% if not allow_overflow %}h-[512px] overflow-y-auto{% endif %}{% else %}w-full{% endif %}">
         {% include "controls.html.j2" %}
       </div>
       
     </div>
-  </details>
+  </div>
 </div>
 
 <!-- Include Script Component Based on Backend -->

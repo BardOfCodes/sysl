@@ -55,19 +55,22 @@ def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr,
                 "_AA": 4,
             }
         }
+    extract_vars = settings.get("extract_vars", True)
+    set_to_ubo = settings.get("set_to_ubo", True)
+
+    render_mode = settings.get("render_mode", "v3")
+
     global_sc = GlobalShaderContext()
     # How to use V3 here? ->
-    extract_vars = settings.get("extract_vars", True)
     if extract_vars:
         varnamed_expr, _, var_map_base = expression._get_varnamed_expr(exclude_uniforms=True)
-        global_sc.create_var_map(var_map_base)
+        global_sc.create_var_map(var_map_base, set_to_ubo=set_to_ubo)
         global_sc = rec_shader_eval(varnamed_expr, global_sc=global_sc)
     else:
         global_sc = rec_shader_eval(expression, global_sc=global_sc)
     global_sc.resolve_codebook() # This will finins ahd add the function.
     # This should give a shader context with all the required modules. 
     # and then based on settings we will load the settings. 
-    render_mode = settings.get("render_mode", "v3")
 
     if render_mode == "v1":
         global_sc.add_shader_module("mainImage_v1")

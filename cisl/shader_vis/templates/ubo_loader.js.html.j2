@@ -1,0 +1,221 @@
+// UBO Loader - Handles Uniform Buffer Object decompression and management
+
+// Global UBO storage
+const globalUBOs = {};
+
+/**
+ * Decompresses base64-encoded, zlib-compressed UBO data
+ * @param {string} data_b64 - Base64 encoded compressed data
+ * @param {Array} shape - Array shape [T, K] where T is time steps, K is data size
+ * @param {string} dtype - Data type (should be 'float32')
+ * @returns {Float32Array} Decompressed float array
+ */
+function decompressUBOData(data_b64, shape, dtype) {
+  try {
+    // Decode base64
+    const binaryString = atob(data_b64);
+    const compressedBytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      compressedBytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    // Decompress using pako (zlib)
+    const decompressedBytes = pako.inflate(compressedBytes);
+    
+    // Convert to typed array based on dtype
+    let typedArray;
+    if (dtype === 'float32') {
+      typedArray = new Float32Array(decompressedBytes.buffer);
+    } else if (dtype === 'float64') {
+      typedArray = new Float64Array(decompressedBytes.buffer);
+    } else {
+      throw new Error(`Unsupported dtype: ${dtype}`);
+    }
+    
+    // Verify shape
+    const expectedSize = shape.reduce((a, b) => a * b, 1);
+    if (typedArray.length !== expectedSize) {
+      throw new Error(`Shape mismatch: expected ${expectedSize}, got ${typedArray.length}`);
+    }
+    
+    return typedArray;
+  } catch (error) {
+    console.error('Error decompressing UBO data:', error);
+    throw error;
+  }
+}
+
+/**
+ * Creates a WebGL Uniform Buffer Object
+ * @param {WebGL2RenderingContext} gl - WebGL context
+ * @param {Float32Array} data - Float data array
+ * @param {number} binding - UBO binding point
+ * @returns {Object} UBO object with buffer and binding info
+ */
+function createUBO(gl, data, binding) {
+  // Create buffer
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(gl.UNIFORM_BUFFER, buffer);
+  gl.bufferData(gl.UNIFORM_BUFFER, data, gl.DYNAMIC_DRAW);
+  
+  // Bind to binding point
+  gl.bindBufferBase(gl.UNIFORM_BUFFER, binding, buffer);
+  
+  return {
+    buffer: buffer,
+    binding: binding,
+    data: data,
+    size: data.length * 4  // 4 bytes per float
+  };
+}
+
+/**
+ * Updates UBO buffer data
+ * @param {WebGL2RenderingContext} gl - WebGL context
+ * @param {Object} ubo - UBO object
+ * @param {Float32Array} newData - New data array
+ * @param {number} offset - Byte offset (default 0)
+ */
+function updateUBO(gl, ubo, newData, offset = 0) {
+  gl.bindBuffer(gl.UNIFORM_BUFFER, ubo.buffer);
+  gl.bufferSubData(gl.UNIFORM_BUFFER, offset, newData);
+  ubo.data = newData;
+}
+
+/**
+ * Initializes all UBOs from the template data
+ * @param {WebGL2RenderingContext} gl - WebGL context
+ * @param {Object} uboData - UBO uniform data from template
+ */
+function initializeUBOs(gl, uboData) {
+  console.log('Initializing UBOs:', Object.keys(uboData));
+  
+  for (const [uboName, uboInfo] of Object.entries(uboData)) {
+    try {
+      console.log(`Processing UBO: ${uboName}`, uboInfo);
+      
+      // Decompress the data
+      const decompressedData = decompressUBOData(
+        uboInfo.data_b64,
+        uboInfo.shape,
+        uboInfo.dtype
+      );
+      
+      console.log(`Decompressed ${uboName}:`, {
+        shape: uboInfo.shape,
+        dataLength: decompressedData.length,
+        binding: uboInfo.binding,
+        isMultiParam: uboInfo.n_params > 1
+      });
+      
+      // For multi-parameter UBOs, only upload the first parameter set initially
+      let initialData = decompressedData;
+      if (uboInfo.n_params && uboInfo.n_params > 1) {
+        const [N, K] = uboInfo.shape;
+        initialData = decompressedData.slice(0, K); // Use first parameter set
+        console.log(`Multi-param UBO: Using first parameter set (${K} values of ${decompressedData.length})`);
+      }
+      
+      // Create UBO with initial data
+      const ubo = createUBO(gl, initialData, uboInfo.binding);
+      
+      // Store globally
+      globalUBOs[uboName] = {
+        ...ubo,
+        shape: uboInfo.shape,
+        n_params: uboInfo.n_params,
+        dtype: uboInfo.dtype
+      };
+      
+      console.log(`UBO ${uboName} created successfully`);
+      
+    } catch (error) {
+      console.error(`Error initializing UBO ${uboName}:`, error);
+    }
+  }
+  
+  // Unbind buffer
+  gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+}
+
+/**
+ * Gets UBO by name
+ * @param {string} name - UBO name
+ * @returns {Object|null} UBO object or null if not found
+ */
+function getUBO(name) {
+  return globalUBOs[name] || null;
+}
+
+/**
+ * Updates UBO for animation (selects time step)
+ * @param {WebGL2RenderingContext} gl - WebGL context
+ * @param {string} uboName - UBO name
+ * @param {number} timeStep - Time step index (0-based)
+ */
+function setUBOTimeStep(gl, uboName, timeStep = 0) {
+  const ubo = globalUBOs[uboName];
+  if (!ubo) {
+    console.warn(`UBO ${uboName} not found`);
+    return;
+  }
+  
+  const [T, K] = ubo.shape;
+  if (timeStep >= T) {
+    console.warn(`Time step ${timeStep} out of range (max: ${T-1})`);
+    return;
+  }
+  
+  // Extract the data for this time step
+  const startIdx = timeStep * K;
+  const endIdx = startIdx + K;
+  const timeStepData = ubo.data.slice(startIdx, endIdx);
+  
+  // Update buffer with this time step's data
+  gl.bindBuffer(gl.UNIFORM_BUFFER, ubo.buffer);
+  gl.bufferSubData(gl.UNIFORM_BUFFER, 0, timeStepData);
+  
+  console.log(`Updated UBO ${uboName} to time step ${timeStep}`);
+}
+
+/**
+ * Links uniform block in shader program to UBO binding point
+ * @param {WebGL2RenderingContext} gl - WebGL context
+ * @param {WebGLProgram} program - Shader program
+ * @param {string} blockName - Uniform block name in shader
+ * @param {number} binding - UBO binding point
+ */
+function linkUniformBlock(gl, program, blockName, binding) {
+  const blockIndex = gl.getUniformBlockIndex(program, blockName);
+  if (blockIndex !== gl.INVALID_INDEX) {
+    gl.uniformBlockBinding(program, blockIndex, binding);
+    console.log(`Linked uniform block '${blockName}' to binding ${binding}`);
+  } else {
+    console.warn(`Uniform block '${blockName}' not found in shader`);
+  }
+}
+
+/**
+ * Sets up all UBO bindings for a shader program
+ * @param {WebGL2RenderingContext} gl - WebGL context
+ * @param {WebGLProgram} program - Shader program
+ */
+function setupUBOBindings(gl, program) {
+  for (const [uboName, ubo] of Object.entries(globalUBOs)) {
+    // The uniform block name in the shader should match the UBO name
+    linkUniformBlock(gl, program, uboName, ubo.binding);
+  }
+}
+
+// Export for external use if needed
+window.UBOLoader = {
+  decompressUBOData,
+  createUBO,
+  updateUBO,
+  initializeUBOs,
+  getUBO,
+  setUBOTimeStep,
+  linkUniformBlock,
+  setupUBOBindings,
+  globalUBOs
+};

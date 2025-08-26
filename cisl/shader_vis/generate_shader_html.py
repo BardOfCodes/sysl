@@ -8,8 +8,9 @@ import json
 import os
 import html
 from jinja2 import Environment, FileSystemLoader
+from ..shader.ubo import get_variable_info_for_editing
 
-def generate_html(data, template_name='shader_vis.html.j2', output_file=None, mouse_control=True, resolution_via_scale=True, show_controls=False, backend='regl'):
+def generate_html(data, template_name='shader_vis.html.j2', output_file=None, mouse_control=True, resolution_via_scale=True, show_controls=False, backend='regl', layout_horizontal=False, allow_overflow=False, allow_singular_ubo_edit=False, enable_ubo_animation=False):
     """
     Generate HTML from JSON configuration using Jinja template.
     
@@ -21,6 +22,9 @@ def generate_html(data, template_name='shader_vis.html.j2', output_file=None, mo
         resolution_via_scale (bool): Enable resolution scaling
         show_controls (bool): Show shader control sliders
         backend (str): Rendering backend to use ('regl' or 'twgl')
+        layout_horizontal (bool): Use horizontal layout (canvas left, controls right)
+        allow_overflow (bool): Allow controls to expand parent div (vs scroll within)
+        allow_singular_ubo_edit (bool): Show UBO editing controls for individual variables
     """
     
     # Validate backend parameter
@@ -103,12 +107,18 @@ def generate_html(data, template_name='shader_vis.html.j2', output_file=None, mo
         textures=texture_data,
         uniforms=ctrl_uniforms,  # UI controls uniforms
         underlying_uniforms=underlying_uniforms,  # All uniforms for ReGL
+        ubo_uniforms=data.get('ubo_uniforms', {}),  # UBO uniforms data
+        ubo_variable_info=data.get('ubo_variable_info', {}),  # UBO variable info for editing
         mouse_control=mouse_control,
         camera_defaults=camera_defaults,
         resolution_via_scale=resolution_via_scale,
         resolution_defaults=resolution_defaults,
         show_controls=show_controls,
-        backend=backend
+        backend=backend,
+        layout_horizontal=layout_horizontal,
+        allow_overflow=allow_overflow,
+        allow_singular_ubo_edit=allow_singular_ubo_edit,
+        enable_ubo_animation=enable_ubo_animation
     )
     
     
@@ -119,7 +129,7 @@ def generate_html(data, template_name='shader_vis.html.j2', output_file=None, mo
 def create_shader_html(shader_code, cisl_uniforms, cisl_textures, title="Generated Shader",
     template_name='shader_vis.html.j2', output_file=None, mouse_control=True,
     resolution_via_scale=True, show_controls=False, backend='regl',
-    script_dir=None):
+    script_dir=None, layout_horizontal=False, allow_overflow=False, allow_singular_ubo_edit=False, enable_ubo_animation=False):
     """
     Create complete HTML structure for the shader visualizer.
     
@@ -134,9 +144,12 @@ def create_shader_html(shader_code, cisl_uniforms, cisl_textures, title="Generat
         show_controls (bool): Show shader control sliders
         backend (str): Rendering backend to use ('regl' or 'twgl')
         script_dir (str): Script directory (optional)
+        layout_horizontal (bool): Use horizontal layout (canvas left, controls right)
+        allow_overflow (bool): Allow controls to expand parent div (vs scroll within)
+        allow_singular_ubo_edit (bool): Show UBO editing controls for individual variables
     """
     json_uniforms = create_shader_json(shader_code, cisl_uniforms, cisl_textures, title)
-    return generate_html(json_uniforms, template_name=template_name, output_file=output_file, mouse_control=mouse_control, resolution_via_scale=resolution_via_scale, show_controls=show_controls, backend=backend)
+    return generate_html(json_uniforms, template_name=template_name, output_file=output_file, mouse_control=mouse_control, resolution_via_scale=resolution_via_scale, show_controls=show_controls, backend=backend, layout_horizontal=layout_horizontal, allow_overflow=allow_overflow, allow_singular_ubo_edit=allow_singular_ubo_edit, enable_ubo_animation=enable_ubo_animation)
 
 def create_shader_json(shader_code, cisl_uniforms, cisl_textures, title="Generated Shader"):
     """
@@ -151,11 +164,22 @@ def create_shader_json(shader_code, cisl_uniforms, cisl_textures, title="Generat
         dict: Complete JSON structure for template rendering
     """
     json_uniforms = convert_cisl_uniforms_to_json(cisl_uniforms, title)
+    # Extract UBO uniforms and prepare variable info for editing
+    ubo_uniforms = {name: data for name, data in cisl_uniforms.items() 
+                    if data.get('type') == 'uniform_buffer'}
+    
+    # Get variable info for UBO editing controls
+    ubo_variable_info = {}
+    for ubo_name, ubo_data in ubo_uniforms.items():
+        ubo_variable_info[ubo_name] = get_variable_info_for_editing(ubo_data)
+    
     return {
         "title": title,
         "frag_str": shader_code,
         "uniforms": json_uniforms,
-        "textures": cisl_textures
+        "textures": cisl_textures,
+        "ubo_uniforms": ubo_uniforms,
+        "ubo_variable_info": ubo_variable_info
     }
 
 
@@ -167,7 +191,7 @@ def convert_cisl_uniforms_to_json(cisl_uniforms, title="Generated Shader"):
         cisl_uniforms (dict): CISL uniforms in format:
             {
                 "uniformName": {
-                    'type': 'float|bool|vec2|vec3|int', 
+                    'type': 'float|bool|vec2|vec3|int|uniform_buffer', 
                     "init_value": value,
                     "min": [min_values], 
                     "max": [max_values]
@@ -192,6 +216,11 @@ def convert_cisl_uniforms_to_json(cisl_uniforms, title="Generated Shader"):
             set_name = "Settings"
         else:
             set_name = "Knobs"
+        
+        # Handle UBO uniforms specially - don't create UI controls for them
+        if uniform_type == 'uniform_buffer':
+            # UBO uniforms are passed through to the underlying_uniforms but don't get UI controls
+            continue
         
         # Handle different uniform types
         if uniform_type == 'bool':

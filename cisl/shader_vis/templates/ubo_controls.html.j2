@@ -1,0 +1,105 @@
+<!-- UBO Editing Controls -->
+{% if allow_singular_ubo_edit and ubo_variable_info %}
+<details open class="bg-gray-50 border border-gray-300 rounded-lg">
+  <summary class="px-3 py-2 font-medium text-gray-800 cursor-pointer hover:bg-gray-100">
+    UBO Variable Editor
+  </summary>
+  <div class="px-3 pb-3 space-y-4">
+    
+    <!-- UBO Variable Selection -->
+    <div class="space-y-2">
+      <label for="ubo-variable-select" class="block text-sm font-medium text-gray-700">
+        Select Variable to Edit:
+      </label>
+      <select 
+        id="ubo-variable-select" 
+        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+      >
+        <option value="">-- Select a variable --</option>
+        {% for ubo_name, variables in ubo_variable_info.items() %}
+          {% for var_name, var_info in variables.items() %}
+            <option value="{{ var_name }}" data-type="{{ var_info.type }}" data-components="{{ var_info.components }}">
+              {{ var_name }} ({{ var_info.type }})
+            </option>
+          {% endfor %}
+        {% endfor %}
+      </select>
+    </div>
+    
+    <!-- Variable Value Input Section -->
+    <div id="ubo-value-inputs" class="space-y-2" style="display: none;">
+      <label class="block text-sm font-medium text-gray-700">
+        New Value:
+      </label>
+      
+      <!-- Single value input (for float, bool) -->
+      <div id="ubo-single-input" class="space-y-2" style="display: none;">
+        <input 
+          type="number"
+          step="0.1"
+          id="ubo-single-value"
+          placeholder="Enter value..."
+          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        />
+      </div>
+      
+      <!-- Vector inputs (for vec2, vec3, vec4) -->
+      <div id="ubo-vector-inputs" class="space-y-2" style="display: none;">
+        <!-- Vertical stack for all vector components -->
+        <div class="space-y-2">
+          <input 
+            type="number" 
+            step="0.1"
+            id="ubo-x-value"
+            placeholder="X component"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+          <input 
+            type="number" 
+            step="0.1"
+            id="ubo-y-value"
+            placeholder="Y component"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            style="display: none;"
+          />
+          <input 
+            type="number" 
+            step="0.1"
+            id="ubo-z-value"
+            placeholder="Z component"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            style="display: none;"
+          />
+          <input 
+            type="number" 
+            step="0.1"
+            id="ubo-w-value"
+            placeholder="W component"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            style="display: none;"
+          />
+        </div>
+      </div>
+      
+      <!-- Current value display -->
+      <div class="text-xs text-gray-600">
+        Current value: <span id="ubo-current-value" class="font-mono">--</span>
+      </div>
+    </div>
+    
+    <!-- Reset Button -->
+    <div class="flex justify-center">
+      <button 
+        id="ubo-reset-button"
+        class="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-medium transition-colors"
+      >
+        Reset All to Original
+      </button>
+    </div>
+    
+    <!-- Status Message -->
+    <div id="ubo-status-message" class="text-sm" style="display: none;"></div>
+    
+  </div>
+</details>
+{% endif %}

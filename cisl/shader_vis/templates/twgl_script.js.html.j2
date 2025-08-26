@@ -4,12 +4,31 @@
   {% include "twgl_texture_loader.js.j2" %}
 {% endif %}
 
+{% if ubo_uniforms %}
+  {% include "ubo_loader.js.html.j2" %}
+{% endif %}
+
 {% include "common_script.js.html.j2" %}
+
+{% if allow_singular_ubo_edit %}
+  {% include "ubo_editor.js.html.j2" %}
+{% endif %}
+
+{% if enable_ubo_animation %}
+  {% include "ubo_animation.js.html.j2" %}
+{% endif %}
 
   // Extract texture registry from Jinja
   const textureRegistry = {
     {% for texname, texdata in textures.items() %}
     "{{ texname }}": {{ texdata | tojson }},
+    {% endfor %}
+  };
+
+  // Extract UBO registry from Jinja
+  const uboRegistry = {
+    {% for uboname, ubodata in ubo_uniforms.items() %}
+    "{{ uboname }}": {{ ubodata | tojson }},
     {% endfor %}
   };
 
@@ -46,6 +65,14 @@
   function createProgram(fragmentShader) {
     try {
       const programInfo = twgl.createProgramInfo(gl, [vertexShaderSource, fragmentShader]);
+      
+      {% if ubo_uniforms %}
+      // Set up UBO bindings for this program
+      if (window.UBOLoader) {
+        UBOLoader.setupUBOBindings(gl, programInfo.program);
+      }
+      {% endif %}
+      
       return programInfo;
     } catch (error) {
       console.error('Error creating shader program:', error);
@@ -91,6 +118,12 @@
     currentProgramInfo = createProgram(originalShaderCode);
     {% if load_textures %}
     loadedTextures = await loadTextures(gl, textureRegistry);
+    {% endif %}
+    {% if ubo_uniforms %}
+    // Initialize UBOs
+    if (window.UBOLoader) {
+      UBOLoader.initializeUBOs(gl, uboRegistry);
+    }
     {% endif %}
     
     // Render function

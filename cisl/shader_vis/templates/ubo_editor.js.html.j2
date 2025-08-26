@@ -1,0 +1,485 @@
+// UBO Variable Editor JavaScript
+
+{% if allow_singular_ubo_edit and ubo_variable_info %}
+
+// Store original UBO data and variable info
+const originalUBOData = {
+  {% for ubo_name, ubo_data in ubo_uniforms.items() %}
+  "{{ ubo_name }}": {{ ubo_data | tojson }},
+  {% endfor %}
+};
+
+const uboVariableInfo = {
+  {% for ubo_name, variables in ubo_variable_info.items() %}
+  "{{ ubo_name }}": {{ variables | tojson }},
+  {% endfor %}
+};
+
+// Current selected variable
+let currentSelectedVariable = null;
+
+// Debounce timer for real-time updates
+let updateTimer = null;
+const UPDATE_DELAY = 300; // 300ms delay after typing stops
+
+// Store original values for reset functionality
+const originalValues = {};
+
+// Store original values from UBO variable info
+function storeOriginalValues() {
+  for (const uboName in uboVariableInfo) {
+    const variables = uboVariableInfo[uboName];
+    for (const varName in variables) {
+      originalValues[varName] = variables[varName].current_value;
+    }
+  }
+  console.log('Stored original UBO values:', originalValues);
+}
+
+// Debounced update function
+function scheduleUpdate() {
+  if (!currentSelectedVariable) return;
+  
+  // Clear existing timer
+  if (updateTimer) {
+    clearTimeout(updateTimer);
+  }
+  
+  // Schedule new update
+  updateTimer = setTimeout(() => {
+    waitForWebGL(() => {
+      try {
+        const newValue = getCurrentInputValue();
+        updateUBOVariable(currentSelectedVariable.name, newValue);
+        showStatus('Updated ' + currentSelectedVariable.name, 'success', 1500);
+      } catch (error) {
+        showStatus('Error: ' + error.message, 'error');
+        console.error('UBO update error:', error);
+      }
+    });
+  }, UPDATE_DELAY);
+}
+
+// Add input listeners for real-time updates
+function addRealtimeListeners() {
+  // Single value input
+  const singleInput = document.getElementById('ubo-single-value');
+  singleInput.addEventListener('input', scheduleUpdate);
+  
+  // Vector inputs
+  const vectorInputs = ['ubo-x-value', 'ubo-y-value', 'ubo-z-value', 'ubo-w-value'];
+  vectorInputs.forEach(inputId => {
+    const input = document.getElementById(inputId);
+    input.addEventListener('input', scheduleUpdate);
+  });
+}
+
+// Wait for WebGL context to be available
+function waitForWebGL(callback, maxAttempts = 20) {
+  let attempts = 0;
+  
+  function checkWebGL() {
+    attempts++;
+    
+    let gl = null;
+    if (window.gl) {
+      gl = window.gl;
+    } else {
+      const canvas = document.getElementById('glcanvas');
+      if (canvas) {
+        gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        if (gl) {
+          window.gl = gl; // Store for future use
+        }
+      }
+    }
+    
+    if (gl) {
+      callback();
+    } else if (attempts < maxAttempts) {
+      setTimeout(checkWebGL, 100); // Try again in 100ms
+    } else {
+      console.warn('WebGL context not available after', maxAttempts, 'attempts');
+    }
+  }
+  
+  checkWebGL();
+}
+
+// Initialize UBO editor
+function initializeUBOEditor() {
+  const variableSelect = document.getElementById('ubo-variable-select');
+  const valueInputs = document.getElementById('ubo-value-inputs');
+  const singleInput = document.getElementById('ubo-single-input');
+  const vectorInputs = document.getElementById('ubo-vector-inputs');
+  const resetButton = document.getElementById('ubo-reset-button');
+  const statusMessage = document.getElementById('ubo-status-message');
+  
+  // Store original values for reset functionality
+  storeOriginalValues();
+  
+  // Add real-time update listeners
+  addRealtimeListeners();
+  
+  // Variable selection handler
+  variableSelect.addEventListener('change', function() {
+    const varName = this.value;
+    const option = this.selectedOptions[0];
+    
+    if (!varName) {
+      valueInputs.style.display = 'none';
+      currentSelectedVariable = null;
+      return;
+    }
+    
+    const varType = option.dataset.type;
+    const components = parseInt(option.dataset.components);
+    
+    currentSelectedVariable = {
+      name: varName,
+      type: varType,
+      components: components
+    };
+    
+    // Show appropriate input controls
+    valueInputs.style.display = 'block';
+    
+    if (varType === 'float' || varType === 'bool') {
+      // Single value input
+      singleInput.style.display = 'block';
+      vectorInputs.style.display = 'none';
+      
+      const input = document.getElementById('ubo-single-value');
+      if (varType === 'bool') {
+        input.placeholder = 'true/false or 1/0';
+        input.type = 'text';
+        input.removeAttribute('step');
+      } else {
+        input.placeholder = 'Enter number...';
+        input.type = 'number';
+        input.step = '0.1';
+      }
+    } else {
+      // Vector input
+      singleInput.style.display = 'none';
+      vectorInputs.style.display = 'block';
+      
+      // Show appropriate number of inputs
+      const inputs = ['ubo-x-value', 'ubo-y-value', 'ubo-z-value', 'ubo-w-value'];
+      for (let i = 0; i < 4; i++) {
+        const input = document.getElementById(inputs[i]);
+        if (i < components) {
+          input.style.display = 'block';
+          input.style.visibility = 'visible';
+        } else {
+          input.style.display = 'none';
+          input.style.visibility = 'hidden';
+        }
+      }
+    }
+    
+    // Load current value
+    loadCurrentValue(varName);
+  });
+  
+  // Reset button handler - resets ALL variables to original values
+  resetButton.addEventListener('click', function() {
+    resetAllToOriginal();
+  });
+}
+
+// Reset all UBO variables to their original values
+function resetAllToOriginal() {
+  if (Object.keys(originalValues).length === 0) {
+    showStatus('No original values stored', 'error');
+    return;
+  }
+  
+  showStatus('Resetting all variables to original values...', 'info', 2000);
+  
+  waitForWebGL(() => {
+    let successCount = 0;
+    let errorCount = 0;
+    
+    // Reset each variable to its original value
+    for (const varName in originalValues) {
+      try {
+        const originalValue = originalValues[varName];
+        updateUBOVariable(varName, originalValue);
+        successCount++;
+      } catch (error) {
+        console.error(`Failed to reset ${varName}:`, error);
+        errorCount++;
+      }
+    }
+    
+    // Update UI if current variable is selected
+    if (currentSelectedVariable && currentSelectedVariable.name in originalValues) {
+      loadOriginalValueToInputs(currentSelectedVariable.name);
+    }
+    
+    // Show final status
+    if (errorCount === 0) {
+      showStatus(`Successfully reset all ${successCount} variables to original values`, 'success', 3000);
+    } else {
+      showStatus(`Reset completed: ${successCount} success, ${errorCount} errors`, 'error', 3000);
+    }
+  });
+}
+
+// Load original value into input fields (without updating UBO)
+function loadOriginalValueToInputs(varName) {
+  const originalValue = originalValues[varName];
+  if (originalValue === null || originalValue === undefined) {
+    return;
+  }
+  
+  const currentValueSpan = document.getElementById('ubo-current-value');
+  
+  if (Array.isArray(originalValue)) {
+    currentValueSpan.textContent = '[' + originalValue.join(', ') + ']';
+    
+    // Load into vector inputs
+    const inputs = ['ubo-x-value', 'ubo-y-value', 'ubo-z-value', 'ubo-w-value'];
+    for (let i = 0; i < originalValue.length; i++) {
+      document.getElementById(inputs[i]).value = originalValue[i];
+    }
+  } else {
+    currentValueSpan.textContent = originalValue.toString();
+    
+    // Load into single input
+    const singleInput = document.getElementById('ubo-single-value');
+    if (currentSelectedVariable && currentSelectedVariable.type === 'bool') {
+      singleInput.value = originalValue ? 'true' : 'false';
+    } else {
+      singleInput.value = originalValue;
+    }
+  }
+}
+
+// Load original value from stored original values (single variable)
+function loadOriginalValue(varName) {
+  const originalValue = originalValues[varName];
+  if (originalValue === null || originalValue === undefined) {
+    showStatus('No original value found for ' + varName, 'error');
+    return;
+  }
+  
+  // Load into input fields
+  loadOriginalValueToInputs(varName);
+  
+  // Trigger immediate update to apply the original value
+  scheduleUpdate();
+}
+
+// Load current value from UBO data
+function loadCurrentValue(varName) {
+  // Find the variable in UBO variable info
+  let currentValue = null;
+  for (const uboName in uboVariableInfo) {
+    const variables = uboVariableInfo[uboName];
+    if (varName in variables) {
+      currentValue = variables[varName].current_value;
+      break;
+    }
+  }
+  
+  const currentValueSpan = document.getElementById('ubo-current-value');
+  if (currentValue !== null) {
+    if (Array.isArray(currentValue)) {
+      currentValueSpan.textContent = '[' + currentValue.join(', ') + ']';
+      
+      // Load into vector inputs
+      const inputs = ['ubo-x-value', 'ubo-y-value', 'ubo-z-value', 'ubo-w-value'];
+      for (let i = 0; i < currentValue.length; i++) {
+        document.getElementById(inputs[i]).value = currentValue[i];
+      }
+    } else {
+      currentValueSpan.textContent = currentValue.toString();
+      
+      // Load into single input
+      const singleInput = document.getElementById('ubo-single-value');
+      if (currentSelectedVariable.type === 'bool') {
+        singleInput.value = currentValue ? 'true' : 'false';
+      } else {
+        singleInput.value = currentValue;
+      }
+    }
+  } else {
+    currentValueSpan.textContent = 'unknown';
+  }
+}
+
+// Get current input value
+function getCurrentInputValue() {
+  if (!currentSelectedVariable) {
+    throw new Error('No variable selected');
+  }
+  
+  if (currentSelectedVariable.type === 'float') {
+    const value = document.getElementById('ubo-single-value').value;
+    const parsed = parseFloat(value);
+    if (isNaN(parsed)) {
+      throw new Error('Invalid number: ' + value);
+    }
+    return parsed;
+  } else if (currentSelectedVariable.type === 'bool') {
+    const value = document.getElementById('ubo-single-value').value.toLowerCase();
+    return value === 'true' || value === '1' || value === 'yes' || value === 'on';
+  } else {
+    // Vector type
+    const inputs = ['ubo-x-value', 'ubo-y-value', 'ubo-z-value', 'ubo-w-value'];
+    const values = [];
+    
+    for (let i = 0; i < currentSelectedVariable.components; i++) {
+      const value = document.getElementById(inputs[i]).value;
+      const parsed = parseFloat(value);
+      if (isNaN(parsed)) {
+        throw new Error(`Invalid number in component ${i + 1}: ${value}`);
+      }
+      values.push(parsed);
+    }
+    
+    return values;
+  }
+}
+
+// Update UBO variable by directly modifying the GPU buffer
+function updateUBOVariable(varName, newValue) {
+  if (!window.UBOLoader) {
+    throw new Error('UBOLoader not available');
+  }
+  
+  console.log(`Updating UBO variable ${varName} to:`, newValue);
+  
+  // Find the UBO that contains this variable
+  let targetUBOName = null;
+  let varMapping = null;
+  
+  for (const uboName in uboVariableInfo) {
+    if (varName in uboVariableInfo[uboName]) {
+      targetUBOName = uboName;
+      // Get the original variable mapping from the UBO data
+      const uboData = originalUBOData[uboName];
+      if (uboData && uboData.var_mapping) {
+        varMapping = uboData.var_mapping[varName];
+      }
+      break;
+    }
+  }
+  
+  if (!targetUBOName || !varMapping) {
+    throw new Error(`Variable ${varName} not found in any UBO or missing mapping`);
+  }
+  
+  // Get the UBO object from UBOLoader
+  const uboObject = window.UBOLoader.getUBO(targetUBOName);
+  if (!uboObject || !uboObject.buffer) {
+    throw new Error(`UBO ${targetUBOName} not found or buffer missing`);
+  }
+  
+  const uboBuffer = uboObject.buffer;
+  
+  // Calculate buffer position
+  const vec4Index = varMapping.vec4_index;
+  const components = varMapping.components;
+  const varType = varMapping.type;
+  
+  // Get WebGL context (should be available since we wait for it)
+  const gl = window.gl;
+  if (!gl) {
+    throw new Error('WebGL context not available - this should not happen after waiting');
+  }
+  
+  // Calculate exact buffer position and prepare minimal update data
+  const baseOffset = vec4Index * 16; // 16 bytes per vec4 (4 floats * 4 bytes)
+  let updateData, byteOffset, byteSize;
+  
+  // Optimize: create minimal buffer updates based on variable type
+  if (varType === 'bool' || varType === 'float') {
+    // Single component update - most efficient
+    updateData = new Float32Array(1);
+    updateData[0] = varType === 'bool' ? (newValue ? 1.0 : 0.0) : parseFloat(newValue);
+    
+    const componentMap = {'x': 0, 'y': 4, 'z': 8, 'w': 12};
+    byteOffset = baseOffset + componentMap[components];
+    byteSize = 4; // Single float = 4 bytes
+    
+  } else if (varType === 'vec2') {
+    // Two component update
+    updateData = new Float32Array(2);
+    updateData[0] = parseFloat(newValue[0]);
+    updateData[1] = parseFloat(newValue[1]);
+    
+    byteOffset = baseOffset + (components === 'xy' ? 0 : 8);
+    byteSize = 8; // Two floats = 8 bytes
+    
+  } else if (varType === 'vec3') {
+    // Three component update
+    updateData = new Float32Array(3);
+    updateData[0] = parseFloat(newValue[0]);
+    updateData[1] = parseFloat(newValue[1]);
+    updateData[2] = parseFloat(newValue[2]);
+    
+    byteOffset = baseOffset; // vec3 always starts at beginning
+    byteSize = 12; // Three floats = 12 bytes
+    
+  } else if (varType === 'vec4') {
+    // Four component update
+    updateData = new Float32Array(4);
+    updateData[0] = parseFloat(newValue[0]);
+    updateData[1] = parseFloat(newValue[1]);
+    updateData[2] = parseFloat(newValue[2]);
+    updateData[3] = parseFloat(newValue[3]);
+    
+    byteOffset = baseOffset;
+    byteSize = 16; // Four floats = 16 bytes
+  }
+  
+  // Efficient buffer update - only update exactly what changed
+  gl.bindBuffer(gl.UNIFORM_BUFFER, uboBuffer);
+  gl.bufferSubData(gl.UNIFORM_BUFFER, byteOffset, updateData);
+  gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+  
+  console.log(`Efficient UBO update: ${varType} ${varName} at offset ${byteOffset}, ${byteSize} bytes`);
+  
+  // Update the local variable info for display
+  uboVariableInfo[targetUBOName][varName].current_value = newValue;
+  
+  console.log(`Successfully updated UBO variable ${varName} in buffer ${targetUBOName}`);
+}
+
+// Show status message
+function showStatus(message, type, duration = 3000) {
+  const statusDiv = document.getElementById('ubo-status-message');
+  statusDiv.style.display = 'block';
+  statusDiv.textContent = message;
+  
+  // Set color based on type
+  statusDiv.className = 'text-sm ';
+  if (type === 'success') {
+    statusDiv.className += 'text-green-600';
+  } else if (type === 'error') {
+    statusDiv.className += 'text-red-600';
+  } else {
+    statusDiv.className += 'text-blue-600';
+  }
+  
+  // Hide after specified duration
+  setTimeout(() => {
+    statusDiv.style.display = 'none';
+  }, duration);
+}
+
+// Initialize when DOM is ready and WebGL is available
+document.addEventListener('DOMContentLoaded', () => {
+  // Initialize the UI immediately
+  initializeUBOEditor();
+  
+  // Also wait for WebGL to be ready and store the context
+  waitForWebGL(() => {
+    console.log('WebGL context ready for UBO editing');
+  });
+});
+
+{% endif %}

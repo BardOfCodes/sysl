@@ -1,0 +1,468 @@
+// UBO Animation Controller
+
+{% if enable_ubo_animation and ubo_uniforms %}
+
+// Global animation state
+const uboAnimationState = {
+  currentTime: 0.0,
+  interpolationMode: 'interpolated', // 'strict' or 'interpolated' - default to interpolated
+  isAnimating: false,
+  fullUBOData: {}, // Store full N,K data for each UBO
+  currentUBOName: null,
+  
+  // Play controls
+  isPlaying: false,
+  playSpeed: 1.0, // Speed multiplier (0.1x to 5.0x)
+  animationId: null, // RequestAnimationFrame ID
+  lastFrameTime: 0,
+  maxTime: 0, // Maximum time value (n_params - 1)
+  baseTimeStep: 0.016 // Base time step (~60fps when speed = 1.0)
+};
+
+// Initialize UBO animation system
+function initializeUBOAnimation() {
+  console.log('Initializing UBO animation system...');
+  
+  // Store full UBO data
+  {% for ubo_name, ubo_data in ubo_uniforms.items() %}
+  {% if ubo_data.n_params and ubo_data.n_params > 1 %}
+  
+  // Decompress and store full N,K data for {{ ubo_name }}
+  try {
+    console.log('Decompressing UBO animation data for {{ ubo_name }}...');
+    const compressedData = atob("{{ ubo_data.data_b64 }}");
+    const compressedBytes = new Uint8Array(compressedData.length);
+    for (let i = 0; i < compressedData.length; i++) {
+      compressedBytes[i] = compressedData.charCodeAt(i);
+    }
+    
+    console.log('Compressed bytes length:', compressedBytes.length);
+    const decompressedBytes = pako.inflate(compressedBytes);
+    console.log('Decompressed bytes length:', decompressedBytes.length);
+    const fullData = new Float32Array(decompressedBytes.buffer);
+    console.log('Full data length:', fullData.length);
+    
+    const shape = {{ ubo_data.shape | tojson }};
+    const nParams = {{ ubo_data.n_params }};
+    console.log('Expected shape:', shape, 'nParams:', nParams);
+    
+    // Validate data
+    const expectedLength = shape[0] * shape[1];
+    if (fullData.length !== expectedLength) {
+      console.error(`Data length mismatch: expected ${expectedLength}, got ${fullData.length}`);
+    }
+    
+    // Store with metadata
+    uboAnimationState.fullUBOData["{{ ubo_name }}"] = {
+      data: fullData,
+      shape: shape, // [N, K*4]
+      nParams: nParams,
+      nVec4s: {{ ubo_data.n_vec4s }},
+      paramShape: {{ ubo_data.param_shape | tojson }} // [1, K*4]
+    };
+    
+    uboAnimationState.currentUBOName = "{{ ubo_name }}";
+    console.log('✅ Loaded UBO animation data for {{ ubo_name }}:', uboAnimationState.fullUBOData["{{ ubo_name }}"]);
+    
+    // Log first few values of each parameter set for debugging
+    const [N, K] = shape;
+    for (let i = 0; i < Math.min(N, 3); i++) {
+      const startIdx = i * K;
+      const slice = fullData.slice(startIdx, startIdx + Math.min(K, 8));
+      console.log(`Parameter set ${i} (first ${slice.length} values):`, Array.from(slice));
+    }
+    
+  } catch (error) {
+    console.error('Failed to decompress UBO animation data for {{ ubo_name }}:', error);
+    console.error(error.stack);
+  }
+  
+  {% endif %}
+  {% endfor %}
+  
+  // Set up event listeners
+  setupAnimationEventListeners();
+  
+  // Initialize with state 0
+  setUBOAnimationState(0.0);
+}
+
+// Set up event listeners for animation controls
+function setupAnimationEventListeners() {
+  const timeSlider = document.getElementById('ubo-time-slider');
+  const timeDisplay = document.getElementById('ubo-time-display');
+  const interpolationRadios = document.querySelectorAll('input[name="ubo-interpolation-mode"]');
+  const quickStateButtons = document.querySelectorAll('.quick-state-btn');
+  
+  // Time slider
+  if (timeSlider) {
+    timeSlider.addEventListener('input', (e) => {
+      const time = parseFloat(e.target.value);
+      setUBOAnimationState(time);
+      timeDisplay.textContent = time.toFixed(2);
+    });
+  }
+  
+  // Interpolation mode
+  interpolationRadios.forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      uboAnimationState.interpolationMode = e.target.value;
+      // Re-apply current state with new interpolation mode
+      setUBOAnimationState(uboAnimationState.currentTime);
+      showAnimationStatus(`Switched to ${e.target.value} interpolation`);
+    });
+  });
+  
+  // Quick state buttons
+  quickStateButtons.forEach(button => {
+    button.addEventListener('click', (e) => {
+      const state = parseInt(e.target.dataset.state);
+      timeSlider.value = state;
+      timeDisplay.textContent = state.toFixed(2);
+      setUBOAnimationState(state);
+    });
+  });
+}
+
+// Set UBO animation state (main function)
+function setUBOAnimationState(time) {
+  console.log(`🎬 setUBOAnimationState called with time: ${time}`);
+  
+  if (!uboAnimationState.currentUBOName) {
+    console.warn('No UBO available for animation');
+    return;
+  }
+  
+  uboAnimationState.currentTime = time;
+  const uboName = uboAnimationState.currentUBOName;
+  const uboInfo = uboAnimationState.fullUBOData[uboName];
+  
+  if (!uboInfo) {
+    console.error('UBO info not found for', uboName);
+    return;
+  }
+  
+  console.log(`UBO info:`, {
+    shape: uboInfo.shape,
+    nParams: uboInfo.nParams,
+    dataLength: uboInfo.data.length,
+    interpolationMode: uboAnimationState.interpolationMode
+  });
+  
+  // Get the target data based on interpolation mode
+  let targetData;
+  if (uboAnimationState.interpolationMode === 'strict') {
+    targetData = getStrictUBOData(uboInfo, time);
+    console.log(`Strict mode: state ${Math.round(time)}, data length: ${targetData.length}`);
+  } else {
+    targetData = getInterpolatedUBOData(uboInfo, time);
+    console.log(`Interpolated mode: time ${time}, data length: ${targetData.length}`);
+  }
+  
+  // Update the actual UBO buffer
+  updateUBOBuffer(uboName, targetData);
+  
+  console.log(`✅ Updated UBO ${uboName} to time ${time.toFixed(2)} (${uboAnimationState.interpolationMode})`);
+}
+
+// Get strict (rounded) UBO data
+function getStrictUBOData(uboInfo, time) {
+  const { data, shape, nParams } = uboInfo;
+  const [N, K] = shape;
+  
+  // Round to nearest integer state
+  const stateIndex = Math.round(Math.max(0, Math.min(nParams - 1, time)));
+  
+  // Extract data for this state
+  const startIdx = stateIndex * K;
+  const endIdx = startIdx + K;
+  
+  return data.slice(startIdx, endIdx);
+}
+
+// Get interpolated UBO data
+function getInterpolatedUBOData(uboInfo, time) {
+  const { data, shape, nParams } = uboInfo;
+  const [N, K] = shape;
+  
+  // Clamp time to valid range
+  const clampedTime = Math.max(0, Math.min(nParams - 1, time));
+  
+  // Get the two states to interpolate between
+  const lowerState = Math.floor(clampedTime);
+  const upperState = Math.min(lowerState + 1, nParams - 1);
+  const alpha = clampedTime - lowerState;
+  
+  // Extract data for both states
+  const lowerStartIdx = lowerState * K;
+  const lowerData = data.slice(lowerStartIdx, lowerStartIdx + K);
+  
+  const upperStartIdx = upperState * K;
+  const upperData = data.slice(upperStartIdx, upperStartIdx + K);
+  
+  // Interpolate
+  const interpolatedData = new Float32Array(K);
+  for (let i = 0; i < K; i++) {
+    interpolatedData[i] = lowerData[i] * (1 - alpha) + upperData[i] * alpha;
+  }
+  
+  return interpolatedData;
+}
+
+// Update the actual WebGL UBO buffer
+function updateUBOBuffer(uboName, newData) {
+  try {
+    // Get WebGL context
+    let gl = window.gl;
+    if (!gl) {
+      const canvas = document.getElementById('glcanvas');
+      if (canvas) {
+        gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        window.gl = gl;
+      }
+    }
+    
+    if (!gl) {
+      console.error('WebGL context not available for UBO animation');
+      return;
+    }
+    
+    const uboObject = window.UBOLoader?.getUBO(uboName);
+    
+    if (!uboObject || !uboObject.buffer) {
+      console.error(`UBO ${uboName} not found or buffer missing`);
+      console.log('Available UBOs:', Object.keys(window.UBOLoader?.globalUBOs || {}));
+      return;
+    }
+    
+    // Ensure newData is a Float32Array
+    const dataToUpload = newData instanceof Float32Array ? newData : new Float32Array(newData);
+    
+    // Update the entire buffer with new data
+    gl.bindBuffer(gl.UNIFORM_BUFFER, uboObject.buffer);
+    gl.bufferSubData(gl.UNIFORM_BUFFER, 0, dataToUpload);
+    gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+    
+    console.log(`✅ Updated UBO buffer ${uboName} with ${dataToUpload.length} values`);
+    
+    // Trigger a render if possible
+    if (window.requestAnimationFrame && window.draw) {
+      window.requestAnimationFrame(window.draw);
+    }
+    
+  } catch (error) {
+    console.error('Failed to update UBO buffer:', error);
+    console.error('Error details:', error.stack);
+  }
+}
+
+// Show animation status message
+function showAnimationStatus(message) {
+  const statusDiv = document.getElementById('ubo-animation-status');
+  if (statusDiv) {
+    statusDiv.style.display = 'block';
+    statusDiv.textContent = message;
+    
+    setTimeout(() => {
+      statusDiv.style.display = 'none';
+    }, 2000);
+  }
+}
+
+// Animation play control functions
+
+// Test function to verify system is working
+window.testUBOAnimation = function() {
+  console.log('🧪 UBO Animation Test Results:');
+  console.log('- Current UBO name:', uboAnimationState.currentUBOName);
+  console.log('- Full UBO data:', Object.keys(uboAnimationState.fullUBOData));
+  console.log('- Max time:', uboAnimationState.maxTime);
+  console.log('- Current time:', uboAnimationState.currentTime);
+  console.log('- Is playing:', uboAnimationState.isPlaying);
+  
+  if (!uboAnimationState.currentUBOName) {
+    console.error('❌ No UBO name set - animation cannot work');
+    return false;
+  }
+  
+  if (Object.keys(uboAnimationState.fullUBOData).length === 0) {
+    console.error('❌ No UBO data loaded - animation cannot work');
+    return false;
+  }
+  
+  if (uboAnimationState.maxTime <= 0) {
+    console.error('❌ Max time not set properly - animation cannot work');
+    return false;
+  }
+  
+  console.log('✅ UBO Animation system is ready!');
+  return true;
+};
+
+window.toggleUBOAnimation = function() {
+  console.log('toggleUBOAnimation called, current state:', uboAnimationState);
+  
+  // Run test first to check if system is ready
+  if (!testUBOAnimation()) {
+    console.error('❌ Cannot start animation - system not ready');
+    return;
+  }
+  
+  if (uboAnimationState.isPlaying) {
+    pauseUBOAnimation();
+  } else {
+    startUBOAnimation();
+  }
+};
+
+window.startUBOAnimation = function() {
+  if (!uboAnimationState.currentUBOName) {
+    console.warn('No UBO available for animation');
+    return;
+  }
+  
+  uboAnimationState.isPlaying = true;
+  uboAnimationState.lastFrameTime = performance.now();
+  
+  // Update UI
+  const playButton = document.getElementById('ubo-play-button');
+  const statusSpan = document.getElementById('ubo-play-status');
+  const loopIndicator = document.getElementById('ubo-loop-indicator');
+  
+  if (playButton) playButton.innerHTML = 'Pause';
+  if (statusSpan) statusSpan.textContent = `Playing at ${uboAnimationState.playSpeed.toFixed(1)}x speed`;
+  if (loopIndicator) loopIndicator.textContent = 'Looping';
+  
+  // Start animation loop
+  animateUBO();
+  
+  console.log('UBO animation started');
+};
+
+window.pauseUBOAnimation = function() {
+  uboAnimationState.isPlaying = false;
+  
+  // Cancel animation frame if running
+  if (uboAnimationState.animationId) {
+    cancelAnimationFrame(uboAnimationState.animationId);
+    uboAnimationState.animationId = null;
+  }
+  
+  // Update UI
+  const playButton = document.getElementById('ubo-play-button');
+  const statusSpan = document.getElementById('ubo-play-status');
+  const loopIndicator = document.getElementById('ubo-loop-indicator');
+  
+  if (playButton) playButton.innerHTML = 'Play';
+  if (statusSpan) statusSpan.textContent = `Paused at time ${uboAnimationState.currentTime.toFixed(2)}`;
+  if (loopIndicator) loopIndicator.textContent = '';
+  
+  console.log('UBO animation paused');
+};
+
+window.resetUBOAnimation = function() {
+  // Stop if playing
+  if (uboAnimationState.isPlaying) {
+    pauseUBOAnimation();
+  }
+  
+  // Reset to start
+  uboAnimationState.currentTime = 0.0;
+  setUBOAnimationState(0.0);
+  
+  // Update UI
+  const timeSlider = document.getElementById('ubo-time-slider');
+  const timeDisplay = document.getElementById('ubo-time-display');
+  const statusSpan = document.getElementById('ubo-play-status');
+  
+  if (timeSlider) timeSlider.value = 0;
+  if (timeDisplay) timeDisplay.textContent = '0.0';
+  if (statusSpan) statusSpan.textContent = 'Reset to start';
+  
+  console.log('UBO animation reset');
+};
+
+function animateUBO() {
+  if (!uboAnimationState.isPlaying) return;
+  
+  const currentFrameTime = performance.now();
+  const deltaTime = (currentFrameTime - uboAnimationState.lastFrameTime) / 1000; // Convert to seconds
+  uboAnimationState.lastFrameTime = currentFrameTime;
+  
+  // Calculate time step based on speed
+  const timeStep = uboAnimationState.baseTimeStep * uboAnimationState.playSpeed;
+  
+  // Update animation time
+  uboAnimationState.currentTime += timeStep;
+  
+  // Handle looping
+  if (uboAnimationState.currentTime > uboAnimationState.maxTime) {
+    uboAnimationState.currentTime = 0.0; // Loop back to start
+  }
+  
+  // Update UBO and UI
+  setUBOAnimationState(uboAnimationState.currentTime);
+  
+  // Update slider position
+  const timeSlider = document.getElementById('ubo-time-slider');
+  const timeDisplay = document.getElementById('ubo-time-display');
+  
+  if (timeSlider) timeSlider.value = uboAnimationState.currentTime;
+  if (timeDisplay) timeDisplay.textContent = uboAnimationState.currentTime.toFixed(2);
+  
+  // Schedule next frame
+  uboAnimationState.animationId = requestAnimationFrame(animateUBO);
+}
+
+function updatePlaySpeed() {
+  const speedSlider = document.getElementById('ubo-speed-slider');
+  const speedValue = document.getElementById('ubo-speed-value');
+  
+  if (speedSlider && speedValue) {
+    uboAnimationState.playSpeed = parseFloat(speedSlider.value);
+    speedValue.textContent = uboAnimationState.playSpeed.toFixed(1);
+    
+    // Update status if playing
+    if (uboAnimationState.isPlaying) {
+      const statusSpan = document.getElementById('ubo-play-status');
+      if (statusSpan) statusSpan.textContent = `Playing at ${uboAnimationState.playSpeed.toFixed(1)}x speed`;
+    }
+    
+    console.log(`Speed updated to ${uboAnimationState.playSpeed.toFixed(1)}x`);
+  }
+}
+
+// Initialize animation system when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  // Wait for UBO loader and WebGL to be ready
+  function tryInitialize() {
+    if (window.UBOLoader && window.UBOLoader.globalUBOs && Object.keys(window.UBOLoader.globalUBOs).length > 0) {
+      console.log('UBO loader ready, initializing animation system...');
+      initializeUBOAnimation();
+      
+      // Set up speed slider listener
+      const speedSlider = document.getElementById('ubo-speed-slider');
+      if (speedSlider) {
+        speedSlider.addEventListener('input', updatePlaySpeed);
+      }
+      
+      // Set maximum time for looping  
+      if (uboAnimationState.currentUBOName) {
+        const uboInfo = uboAnimationState.fullUBOData[uboAnimationState.currentUBOName];
+        if (uboInfo) {
+          uboAnimationState.maxTime = uboInfo.nParams - 1;
+          console.log(`Set max animation time to: ${uboAnimationState.maxTime}`);
+        }
+      }
+      
+    } else {
+      console.log('Waiting for UBO loader...');
+      setTimeout(tryInitialize, 200);
+    }
+  }
+  
+  // Start trying to initialize
+  setTimeout(tryInitialize, 100);
+});
+
+{% endif %}

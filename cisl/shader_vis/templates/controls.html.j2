@@ -1,8 +1,15 @@
 <!-- Controls Panel -->
-<div id="control-panel" class="space-y-4">
-  <div class="bg-gray-50 p-4 rounded-lg shadow-sm space-y-6">
+<div id="control-panel" class="space-y-4 {% if layout_horizontal and not allow_overflow %}h-full{% endif %}">
+  <div class="bg-gray-50 p-4 rounded-lg shadow-sm space-y-6 {% if layout_horizontal and not allow_overflow %}h-full overflow-y-auto control-scroll{% endif %}">
 
     {% if show_controls %}
+    
+    <!-- UBO Animation Controls (appears first if enabled) -->
+    {% include "ubo_animation_controls.html.j2" %}
+    
+    <!-- UBO Variable Editor (appears above other controls) -->
+    {% include "ubo_controls.html.j2" %}
+    
     <!-- Uniform Controls - Grouped by set_name -->
     {% set uniform_groups = {} %}
     {% for uniform in uniforms %}
