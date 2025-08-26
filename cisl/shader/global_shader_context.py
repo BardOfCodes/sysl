@@ -2,6 +2,7 @@
 from collections import deque, defaultdict
 from typing import List, Dict, Set  
 from string import Template
+import sympy as sp
 from .shader_module import SMMap, ShaderModule
 from .local_shader_context import LocalShaderContext, SCENE_EXPR_PROPS, mat_master_template
 from .strace_v1 import CONSTANTS, UNIFORMS, PRELIMINARIES
@@ -18,11 +19,18 @@ ${INNER_CODE}
 
 void main(void)
 {
+  ${LOAD_PARAMS_CALL}
   mainImage(fragColor, gl_FragCoord.xy);
 }""")
 
 ShaderToy_TEMPLATE = Template("""
-${INNER_CODE}""")
+${INNER_CODE}
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{
+  ${LOAD_PARAMS_CALL}
+  mainImage_ST(fragColor, fragCoord);
+}
+""")
 
 
 class GlobalShaderContext:
@@ -37,11 +45,42 @@ class GlobalShaderContext:
         self.material_count = 0
         self.material_registry = {}
         self.texture_registry = {}
+        self.var_map = {}
 
     def add_texture(self, texture_data):
         # pack the texture data. 
         name = texture_data["name"]
         self.texture_registry[name] = texture_data
+    def create_var_map(self, var_map_base):
+        var_map = {}
+        for var_name, param in var_map_base.items():
+            if isinstance(param, str):
+                raise NotImplementedError
+            else:
+                if len(param) == 0:
+                    if isinstance(param, sp.Integer):
+                        param = float(param)
+                    var_type = "float"
+                    var_value = f"{param}"
+                if len(param) == 1:
+                    if isinstance(param[0], sp.Integer):
+                        param = [float(param[0])]
+                    var_type = "float"
+                    var_value = f"{param[0]}"
+                elif len(param) == 2:
+                    var_type = "vec2"
+                    var_value = f"vec2({float(param[0])}, {float(param[1])})"
+                elif len(param) == 3:
+                    var_type = "vec3"
+                    var_value = f"vec3({float(param[0])}, {float(param[1])}, {float(param[2])})"
+                elif len(param) == 4:
+                    var_type = "vec4"
+                    var_value = f"vec4({float(param[0])}, {float(param[1])}, {float(param[2])}, {float(param[3])})"
+                else:
+                    raise NotImplementedError
+            var_map[var_name] = {"type": var_type, "value": var_value}
+        self.var_map = var_map
+
     def get_textures(self):
         return self.texture_registry
 
@@ -183,6 +222,23 @@ class GlobalShaderContext:
         code_lines.append("")  # Empty line for separation
         return "\n".join(code_lines)
     
+    def emit_varlinking(self) -> str:
+        """Emit shader code to link variables."""
+        if not self.var_map:
+            return None
+        code_lines = ["// Varlinking"]
+        function_lines = []
+        for var_name, var_info in self.var_map.items():
+            var_type, var_value = var_info["type"], var_info["value"]
+            code_lines.append(f"{var_type} {var_name};")
+            function_lines.append(f"{var_name} = {var_value};")
+        code_lines.append("void loadParams() {")
+        code_lines.append("\n".join(function_lines))
+        code_lines.append("}")
+        
+        code_lines.append("")  # Empty line for separation
+        return "\n".join(code_lines)
+
     def topological_sort(self) -> List[str]:
         """Perform topological sort of shader modules based on dependencies."""
         # Build the dependency graph
@@ -257,6 +313,14 @@ class GlobalShaderContext:
         if uniforms_code:
             code_blocks.append(uniforms_code)
         
+        # varlinking code
+        varlinking_code = self.emit_varlinking()
+        if varlinking_code:
+            load_params_call = "loadParams();"
+            code_blocks.append(varlinking_code)
+        else:
+            load_params_call = ""
+
         # Emit textures
         textures_code = self.emit_textures()
         if textures_code:
@@ -273,9 +337,11 @@ class GlobalShaderContext:
 
 
         if settings.get("target", "GLSL") == "GLSL":
-            real_code = GLSL_TEMPLATE.substitute(INNER_CODE=inner_code)
+            real_code = GLSL_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALL=load_params_call)
         elif settings.get("target", "GLSL") == "ShaderToy":
-            real_code = ShaderToy_TEMPLATE.substitute(INNER_CODE=inner_code)
+            #  rename MainImage.
+            inner_code = inner_code.replace("void mainImage", "void mainImage_ST")
+            real_code = ShaderToy_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALL=load_params_call)
         else:
             raise ValueError(f"Invalid target: {settings.get('target', 'GLSL')}")
         return real_code

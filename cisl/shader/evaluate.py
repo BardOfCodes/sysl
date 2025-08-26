@@ -43,7 +43,9 @@ from .param_evaluate import _inline_parse_param_from_expr
 
 DEFAULT_BOUND_THRESHOLD = 0.02
 # V1 -> Just a single expression.
-def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr, settings: Dict[str, Any] | None = None, return_shader_context: bool=False) -> type_union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
+def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr, 
+                       settings: Dict[str, Any] | None = None, 
+                       return_shader_context: bool=False) -> type_union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
     if settings is None:
         settings = {
         "render_mode": "v3",
@@ -55,11 +57,18 @@ def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr, settings: Dict[s
         }
     global_sc = GlobalShaderContext()
     # How to use V3 here? ->
-    global_sc = rec_shader_eval(expression, global_sc=global_sc)
+    extract_vars = settings.get("extract_vars", True)
+    if extract_vars:
+        varnamed_expr, _, var_map_base = expression._get_varnamed_expr(exclude_uniforms=True)
+        global_sc.create_var_map(var_map_base)
+        global_sc = rec_shader_eval(varnamed_expr, global_sc=global_sc)
+    else:
+        global_sc = rec_shader_eval(expression, global_sc=global_sc)
     global_sc.resolve_codebook() # This will finins ahd add the function.
     # This should give a shader context with all the required modules. 
     # and then based on settings we will load the settings. 
     render_mode = settings.get("render_mode", "v3")
+
     if render_mode == "v1":
         global_sc.add_shader_module("mainImage_v1")
     elif render_mode == "v2":
@@ -464,9 +473,9 @@ def eval_mat_v3(expression: csls.MaterialV3, global_sc) -> GlobalShaderContext:
     if isinstance(expression, csls.NonEmissiveMaterialV3):
         code_lines = mat_v3_non_emissive_template.substitute(
             albedo=processed_params[0],
-            roughness=processed_params[1],
-            clearcoat=processed_params[2],
-            metallic=processed_params[3],
+            metallic=processed_params[1],
+            roughness=processed_params[2],
+            clearcoat=processed_params[3],
             pos_latest=cur_pos
         )
     elif isinstance(expression, csls.EncodedRGBGrid3D):
@@ -517,6 +526,7 @@ def eval_mat_v3(expression: csls.MaterialV3, global_sc) -> GlobalShaderContext:
     for code_line in code_lines.split("\n"):
         global_sc.local_sc.add_codeline(code_line)
     global_sc.local_sc.dependencies.append("BaseMaterials")
+    global_sc.local_sc.dependencies.append("Box3D")
     global_sc.local_sc.res_sdf_stack.append(("Material", "mat_0"))
     # global_sc.resolve_codebook()
     # global_sc.pop_codebook()
