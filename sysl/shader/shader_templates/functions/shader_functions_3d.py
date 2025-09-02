@@ -1,5 +1,5 @@
 
-from .shader_module import register_shader_module
+from ...shader_module import register_shader_module
 
 Sphere3D = register_shader_module("""
 @name Sphere3D

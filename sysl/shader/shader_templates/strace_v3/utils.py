@@ -1,4 +1,4 @@
-from ..shader_module import register_shader_module
+from ...shader_module import register_shader_module
 
 Hash = register_shader_module("""
 @name Hash

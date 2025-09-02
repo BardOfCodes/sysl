@@ -1,4 +1,4 @@
-# CISL: Constructive Implicit Scene Language
+# SySL: Symbolic Scene Language
 
 ## TODO:
 
@@ -21,8 +21,8 @@
 A Python library for constructing Implicit Scenes with Symbolic Expressions, featuring [TBD] ray-traced rendering and real-time visualization capabilities. 
 
 1. Use [Geolipi]() to describe the 3D Shape. 
-2. Use **CISL** to add materials to 3D shapes.
-3. Use **CISL** to generate shader code and visualize the output.
+2. Use **SySL** to add materials to 3D shapes.
+3. Use **SySL** to generate shader code and visualize the output.
 
 ## Features
 
@@ -39,8 +39,8 @@ A Python library for constructing Implicit Scenes with Symbolic Expressions, fea
 ### From Source
 
 ```bash
-git clone https://github.com/bardofcodes/cisl.git
-cd cisl
+git clone https://github.com/bardofcodes/sysl.git
+cd sysl
 pip install -e .
 ```
 
@@ -54,9 +54,9 @@ pip install -r requirements.txt
 
 ```python
 import geolipi.symbolic as gls
-import cisl.symbolic as cls
-from cisl.shader.evaluate import evaluate_to_shader
-from cisl.shader_vis.generate_shader_html import create_shader_html, make_jupyter_compatible_html
+import sysl.symbolic as sls
+from sysl.shader.evaluate import evaluate_to_shader
+from sysl.shader_vis.generate_shader_html import create_shader_html, make_jupyter_compatible_html
 from IPython.display import display, HTML
 
 # Create basic shapes
@@ -70,12 +70,12 @@ scene = gls.Translate3D(
 )
 
 # Assign materials
-material = cls.NonEmissiveMaterialV3(
+material = sls.NonEmissiveMaterialV3(
     (1.0, 0.0, 0.0), 
     (1.0,), (1.0,), (0.3,)
 )
 
-scene_with_material = cls.MatSolidV3(scene, material)
+scene_with_material = sls.MatSolidV3(scene, material)
 
 # Render
 shader_code, uniforms = evaluate_to_shader(scene_with_material)
@@ -93,8 +93,8 @@ display(HTML(jupy_wrapper_html))
 ## Project Structure
 
 ```
-cisl/
-├── cisl/
+sysl/
+├── sysl/
 │   ├── symbolic/          # Symbolic expression system
 │   ├── shader/           # Rendering and shader utilities
 │   └── shader_vis/       # Visualization components
@@ -147,8 +147,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/bardofcodes/cisl/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/bardofcodes/cisl/discussions)
+- **Issues**: [GitHub Issues](https://github.com/bardofcodes/sysl/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/bardofcodes/sysl/discussions)
 - **Email**: [your.email@example.com](mailto:adityaganeshan@gmail.com)
 
 ---

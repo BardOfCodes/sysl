@@ -4,7 +4,7 @@
 
 # -> Implies Get Code -> Apply basic RGB Material. 
 
-# First goal -> render arbitary 3D CSG expression from Geolipi using CISL. 
+# First goal -> render arbitary 3D CSG expression from Geolipi using SySL. 
 # -> requirements: a) SDF map. b) Uniform, variable, operators handing, c) basic material, d) basic scene handling, e) render config handing.
 # Just render the SDF -> Apply strict materials. 
 
@@ -13,15 +13,15 @@
 # basically register geometry. 
 
 import geolipi.symbolic as gls
-import cisl.symbolic as csls
-from cisl.shader.evaluate import evaluate_to_shader
-from cisl.shader.shader_module import SMMap
+import sysl.symbolic as sls
+from sysl.shader.evaluate import evaluate_to_shader
+from sysl.shader.shader_module import SMMap
 import json
 import numpy as np
 from PIL import Image
-from cisl.shader_vis.generate_shader_html import create_shader_html
-from cisl.shader_vis.generate_shader_html import make_jupyter_compatible_html
-from cisl.shader_vis.offline_render import render_cisl_shader_to_numpy
+from sysl.shader_vis.generate_shader_html import create_shader_html
+from sysl.shader_vis.generate_shader_html import make_jupyter_compatible_html
+from sysl.shader_vis.offline_render import render_sysl_shader_to_numpy
 
 settings = {
     "render_mode": "v3",
@@ -33,26 +33,26 @@ settings = {
     "target": "ShaderToy"
 }
 
-# obj_1 = csls.MatSolidV2(solid_expr, csls.RGBMaterial((0., 1.0, 0.0)))
-# obj_2 = csls.MatSolidV2(gls.Translate3D(solid_expr, (0.0, 0.5, 0.0)), csls.RGBMaterial((0., 0.0, 1.0)))
-# obj_3 = csls.MatSolidV2(gls.Translate3D(solid_expr, (0.0, 0.25, 0.5)), csls.RGBMaterial((1.0, 0.0, 0.0)))
+# obj_1 = sls.MatSolidV2(solid_expr, sls.RGBMaterial((0., 1.0, 0.0)))
+# obj_2 = sls.MatSolidV2(gls.Translate3D(solid_expr, (0.0, 0.5, 0.0)), sls.RGBMaterial((0., 0.0, 1.0)))
+# obj_3 = sls.MatSolidV2(gls.Translate3D(solid_expr, (0.0, 0.25, 0.5)), sls.RGBMaterial((1.0, 0.0, 0.0)))
 
 # expression = gls.SmoothUnion(obj_1, obj_2, (0.0,))
-# # expression = csls.MatColorOnly(expression, obj_3)
-# expression = csls.MatSmoothColorOnly(expression, obj_3, 
+# # expression = sls.MatColorOnly(expression, obj_3)
+# expression = sls.MatSmoothColorOnly(expression, obj_3, 
 #     # (0.1,)
 #     gls.UniformFloat((0.0,), (0.2,), (1.0,), "k")
 #     )
-# expression = csls.BoundedSolid(expression, gls.Cuboid3D((2.0, 2.0, 2.0)), )
+# expression = sls.BoundedSolid(expression, gls.Cuboid3D((2.0, 2.0, 2.0)), )
 solid_expr = gls.Sphere3D((0.5,))
-expression = csls.MatSolidV3(solid_expr, csls.MaterialV3((1.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0,), (0.0,), (0.0,)))
-# expression = csls.MatSolidV3(solid_expr, csls.NonEmissiveMaterialV3((1.0, 0.0, 0.0), (0.0,), (0.0,), (0.0,)))
-# expression = csls.MatSolidV3(solid_expr, csls.MatReference("name"))
+expression = sls.MatSolidV3(solid_expr, sls.MaterialV3((1.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0,), (0.0,), (0.0,)))
+# expression = sls.MatSolidV3(solid_expr, sls.NonEmissiveMaterialV3((1.0, 0.0, 0.0), (0.0,), (0.0,), (0.0,)))
+# expression = sls.MatSolidV3(solid_expr, sls.MatReference("name"))
 
 
 solid_expr = gls.Sphere3D((1.5,))
-expression = csls.MatSolidV3(solid_expr, 
-                csls.NonEmissiveMaterialV3(
+expression = sls.MatSolidV3(solid_expr, 
+                sls.NonEmissiveMaterialV3(
                     (1.0, 0.0, 0.0), 
                     # gls.UniformVec3((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), (1.0, 1.0, 1.0), "albedo"),
                     # (0.0, 0.0, 0.0), 
@@ -67,9 +67,9 @@ expression = csls.MatSolidV3(solid_expr,
 
 
 solid_expr_2 = gls.Translate3D(gls.Cuboid3D((1.72, 0.2, 1.7)), (0.0, -1.0, 0.0))
-expression_2 = csls.MatSolidV3(solid_expr_2, 
-                csls.MatReference("MatRustyPaint")
-                # csls.MaterialV3(
+expression_2 = sls.MatSolidV3(solid_expr_2, 
+                sls.MatReference("MatRustyPaint")
+                # sls.MaterialV3(
                 #     (0.0, 0.0, 1.0), 
                 #     # gls.UniformVec3((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), (1.0, 1.0, 1.0), "albedo"),
                 #     (0.0, 0.0, 0.0), 
@@ -85,9 +85,9 @@ expression_2 = csls.MatSolidV3(solid_expr_2,
 expression = gls.Union(expression, expression_2)
 
 solid_expr = gls.Sphere3D((0.5,))
-obj_1 = csls.MatSolidV3(solid_expr, csls.NonEmissiveMaterialV3((0., 1.0, 0.0), (1.0,), (1.0,), (0.3,)))
-obj_2 = csls.MatSolidV3(gls.Translate3D(solid_expr, (0.0, 0.5, 0.0)), csls.NonEmissiveMaterialV3((0., 0.0, 1.0), (1.0,), (1.0,), (0.3,)))
-obj_3 = csls.MatSolidV3(gls.Translate3D(solid_expr, (0.0, 0.25, 0.5)), csls.NonEmissiveMaterialV3((1.0, 0.0, 0.0), (1.0,), (1.0,), (0.3,)))
+obj_1 = sls.MatSolidV3(solid_expr, sls.NonEmissiveMaterialV3((0., 1.0, 0.0), (1.0,), (1.0,), (0.3,)))
+obj_2 = sls.MatSolidV3(gls.Translate3D(solid_expr, (0.0, 0.5, 0.0)), sls.NonEmissiveMaterialV3((0., 0.0, 1.0), (1.0,), (1.0,), (0.3,)))
+obj_3 = sls.MatSolidV3(gls.Translate3D(solid_expr, (0.0, 0.25, 0.5)), sls.NonEmissiveMaterialV3((1.0, 0.0, 0.0), (1.0,), (1.0,), (0.3,)))
 expression = gls.SmoothUnion(obj_1, obj_2, (0.0,))
 
 result = evaluate_to_shader(expression, settings, return_shader_context=True)
@@ -112,7 +112,7 @@ with open("generated_shader.frag", "w") as f:
 # print("Saved generated shader code to 'generated_shader.frag'")
 
 # print("Rendering 3D CSG expression...")
-# output = render_cisl_shader_to_numpy(shader_code, uniforms, size=(512, 512))
+# output = render_sysl_shader_to_numpy(shader_code, uniforms, size=(512, 512))
 # print(f"Rendering completed successfully! Output shape: {output.shape}")
 
 # Save the output as an image to verify it's working
@@ -127,15 +127,15 @@ with open("generated_shader.frag", "w") as f:
 # print("Generated shader HTML with save render functionality!")
 
 
-# object = csls.MatSolidV3(solid_expr, 
-#         csls.MaterialV3((1.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0,), (0.0,), (0.0,)))
-# object = csls.MatSolidV3(solid_expr, 
-#         csls.NonEmissiveMaterialV3((1.0, 0.0, 0.0), (0.0,), (0.0,), (0.0,)))
-# object = csls.MatSolidV3(solid_expr, 
-#         csls.MatReference("name"))
+# object = sls.MatSolidV3(solid_expr, 
+#         sls.MaterialV3((1.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0,), (0.0,), (0.0,)))
+# object = sls.MatSolidV3(solid_expr, 
+#         sls.NonEmissiveMaterialV3((1.0, 0.0, 0.0), (0.0,), (0.0,), (0.0,)))
+# object = sls.MatSolidV3(solid_expr, 
+#         sls.MatReference("name"))
 
 
-# scene_exprs = [csls.RegisterMaterial(object)]
+# scene_exprs = [sls.RegisterMaterial(object)]
 
 # The way it should work -> we store a list of materials and mat references
 # Separately construct the materials expression and codebook for it.

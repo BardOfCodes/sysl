@@ -5,7 +5,7 @@ from string import Template
 import sympy as sp
 from .shader_module import SMMap, ShaderModule
 from .local_shader_context import LocalShaderContext, SCENE_EXPR_PROPS, mat_master_template
-from .strace_v1 import CONSTANTS, UNIFORMS, PRELIMINARIES
+from .shader_templates.common import CONSTANTS, UNIFORMS, PRELIMINARIES
 from .ubo import create_var_map_with_ubo, generate_glsl_var_declarations, generate_glsl_load_statements
 
 GLSL_TEMPLATE = Template("""#version 300 es

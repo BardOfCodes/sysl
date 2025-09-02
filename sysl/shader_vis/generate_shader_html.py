@@ -126,7 +126,7 @@ def generate_html(data, template_name='shader_vis.html.j2', output_file=None, mo
 
 
 
-def create_shader_html(shader_code, cisl_uniforms, cisl_textures, title="Generated Shader",
+def create_shader_html(shader_code, sysl_uniforms, sysl_textures, title="Generated Shader",
     template_name='shader_vis.html.j2', output_file=None, mouse_control=True,
     resolution_via_scale=True, show_controls=False, backend='regl',
     script_dir=None, layout_horizontal=False, allow_overflow=False, allow_singular_ubo_edit=False, enable_ubo_animation=False):
@@ -135,7 +135,7 @@ def create_shader_html(shader_code, cisl_uniforms, cisl_textures, title="Generat
     
     Args:
         shader_code (str): The fragment shader code
-        cisl_uniforms (dict): CISL uniforms dictionary
+        sysl_uniforms (dict): SySL uniforms dictionary
         title (str): Title for the shader
         template_name (str): Name of the Jinja template file
         output_file (str): Output HTML file path (optional)
@@ -148,24 +148,24 @@ def create_shader_html(shader_code, cisl_uniforms, cisl_textures, title="Generat
         allow_overflow (bool): Allow controls to expand parent div (vs scroll within)
         allow_singular_ubo_edit (bool): Show UBO editing controls for individual variables
     """
-    json_uniforms = create_shader_json(shader_code, cisl_uniforms, cisl_textures, title)
+    json_uniforms = create_shader_json(shader_code, sysl_uniforms, sysl_textures, title)
     return generate_html(json_uniforms, template_name=template_name, output_file=output_file, mouse_control=mouse_control, resolution_via_scale=resolution_via_scale, show_controls=show_controls, backend=backend, layout_horizontal=layout_horizontal, allow_overflow=allow_overflow, allow_singular_ubo_edit=allow_singular_ubo_edit, enable_ubo_animation=enable_ubo_animation)
 
-def create_shader_json(shader_code, cisl_uniforms, cisl_textures, title="Generated Shader"):
+def create_shader_json(shader_code, sysl_uniforms, sysl_textures, title="Generated Shader"):
     """
     Create complete JSON structure for the HTML template system.
     
     Args:
         shader_code (str): The fragment shader code
-        cisl_uniforms (dict): CISL uniforms dictionary
+        sysl_uniforms (dict): SySL uniforms dictionary
         title (str): Title for the shader
         
     Returns:
         dict: Complete JSON structure for template rendering
     """
-    json_uniforms = convert_cisl_uniforms_to_json(cisl_uniforms, title)
+    json_uniforms = convert_sysl_uniforms_to_json(sysl_uniforms, title)
     # Extract UBO uniforms and prepare variable info for editing
-    ubo_uniforms = {name: data for name, data in cisl_uniforms.items() 
+    ubo_uniforms = {name: data for name, data in sysl_uniforms.items() 
                     if data.get('type') == 'uniform_buffer'}
     
     # Get variable info for UBO editing controls
@@ -177,18 +177,18 @@ def create_shader_json(shader_code, cisl_uniforms, cisl_textures, title="Generat
         "title": title,
         "frag_str": shader_code,
         "uniforms": json_uniforms,
-        "textures": cisl_textures,
+        "textures": sysl_textures,
         "ubo_uniforms": ubo_uniforms,
         "ubo_variable_info": ubo_variable_info
     }
 
 
-def convert_cisl_uniforms_to_json(cisl_uniforms, title="Generated Shader"):
+def convert_sysl_uniforms_to_json(sysl_uniforms, title="Generated Shader"):
     """
-    Convert CISL uniforms format to JSON format compatible with the HTML template system.
+    Convert SySL uniforms format to JSON format compatible with the HTML template system.
     
     Args:
-        cisl_uniforms (dict): CISL uniforms in format:
+        sysl_uniforms (dict): SySL uniforms in format:
             {
                 "uniformName": {
                     'type': 'float|bool|vec2|vec3|int|uniform_buffer', 
@@ -205,7 +205,7 @@ def convert_cisl_uniforms_to_json(cisl_uniforms, title="Generated Shader"):
     json_uniforms = []
     render_uniforms = ["sunAzimuth", "sunElevation", "resolution", "castShadows"]
     camera_uniforms = ["cameraAngleX", "cameraAngleY", "cameraDistance", "cameraOrigin"]
-    for uniform_name, uniform_data in cisl_uniforms.items():
+    for uniform_name, uniform_data in sysl_uniforms.items():
         uniform_type = uniform_data.get('type', 'float')
         init_value = uniform_data.get('init_value', 0)
         min_vals = uniform_data.get('min', [])

@@ -10,7 +10,7 @@ os.environ["MESA_GLSL_VERSION_OVERRIDE"] = "330"
 os.environ["GALLIUM_DRIVER"] = "llvmpipe"
 os.environ["LIBGL_ALWAYS_SOFTWARE"] = "1"
 
-def render_cisl_shader_to_numpy(
+def render_sysl_shader_to_numpy(
     frag_shader_code: str,
     uniforms: Dict[str, Dict[str, Any]],
     size: Tuple[int, int] = (512, 512)

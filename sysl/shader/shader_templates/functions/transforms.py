@@ -1,4 +1,4 @@
-from .shader_module import register_shader_module, ShaderModule, SMMap
+from ...shader_module import register_shader_module, ShaderModule, SMMap
 import geolipi.symbolic as gls
 
 

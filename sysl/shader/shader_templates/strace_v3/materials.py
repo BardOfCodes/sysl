@@ -1,5 +1,5 @@
-from ..shader_module import register_shader_module
-from ..strace_v1 import UNIFORMS
+from ...shader_module import register_shader_module
+from ..common import UNIFORMS
 UNIFORMS.update({
     "iTime": {
         'type': 'float', "init_value": 0.0,

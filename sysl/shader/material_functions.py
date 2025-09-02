@@ -1,6 +1,6 @@
 from string import Template
 from .shader_module import register_shader_module, SMMap
-from .combinators import FixedArityShaderModule 
+from .shader_module_classes import FixedArityShaderModule 
 
 MatSolidV1 = register_shader_module("""
 @name MatSolidV1

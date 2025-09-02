@@ -1,9 +1,9 @@
 
-import cisl.symbolic as csls
+import sysl.symbolic as sls
 import geolipi.symbolic as gls
-import cisl.torch_compute.mat_combinators as mat_comb
+import sysl.torch_compute.mat_combinators as mat_comb
 import geolipi.torch_compute.transforms as transform_bank
-import cisl.torch_compute.mat_functions as mat_func
+import sysl.torch_compute.mat_functions as mat_func
 import geolipi.symbolic.transforms_3d as sym_t3d
 import geolipi.symbolic.transforms_2d as sym_t2d
 import geolipi.symbolic.combinators as sym_comb
@@ -49,11 +49,11 @@ COMBINATOR_MAP = {
     sym_comb.SmoothUnion: mat_comb.sdf_smooth_union,
     sym_comb.SmoothIntersection: mat_comb.sdf_smooth_intersection,
     sym_comb.SmoothDifference: mat_comb.sdf_smooth_difference,
-    csls.GeomOnlySmoothUnion: mat_comb.sdf_geom_only_smooth_union,
+    sls.GeomOnlySmoothUnion: mat_comb.sdf_geom_only_smooth_union,
     sym_comb.XOR: mat_comb.sdf_xor,
 }
 
 MATERIAL_MAP = {
-    csls.MaterialV3: mat_func.material_v3,
-    csls.NonEmissiveMaterialV3: mat_func.non_emissive_material_v3,
+    sls.MaterialV3: mat_func.material_v3,
+    sls.NonEmissiveMaterialV3: mat_func.non_emissive_material_v3,
 }

@@ -32,7 +32,7 @@ from geolipi.torch_compute.common import EPSILON
 from geolipi.torch_compute.sympy_to_torch import SYMPY_TO_TORCH, TEXT_TO_SYMPY
 from geolipi.torch_compute.evaluate_expression import _parse_param_from_expr
 ### Create a Evaluate wrapper -> This will create the coords and may be different in different derivative languages.
-import cisl.symbolic as csls
+import sysl.symbolic as sls
 from .maps import MATERIAL_MAP, COMBINATOR_MAP, MODIFIER_MAP
 
 def recursive_evaluate_mat_expr(expression: SUPERSET_TYPE, sketcher: Sketcher, 
@@ -121,7 +121,7 @@ def eval_prim(expression: PRIM_TYPE, sketcher: Sketcher,
     return sdf
 
 @rec_eval_mat_expr.register
-def eval_mat_solid(expression: csls.MatSolid, sketcher: Sketcher,
+def eval_mat_solid(expression: sls.MatSolid, sketcher: Sketcher,
                    secondary_sketcher: Optional[Sketcher] = None, coords: th.Tensor = None,
                    *args, **kwargs) -> th.Tensor:
     
@@ -136,7 +136,7 @@ def eval_mat_solid(expression: csls.MatSolid, sketcher: Sketcher,
     return out
 
 @rec_eval_mat_expr.register
-def eval_material(expression: csls.Material, sketcher: Sketcher,
+def eval_material(expression: sls.Material, sketcher: Sketcher,
                    secondary_sketcher: Optional[Sketcher] = None, coords: th.Tensor = None,
                    *args, **kwargs) -> th.Tensor:
     params = expression.args

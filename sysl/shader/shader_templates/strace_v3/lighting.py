@@ -1,5 +1,5 @@
-from ..shader_module import register_shader_module, SMMap
-from ..strace_v1 import CONSTANTS
+from ...shader_module import register_shader_module, SMMap
+from ..common import CONSTANTS
 import numpy as np
 
 CONSTANTS.update({
@@ -35,6 +35,7 @@ LightPackage = register_shader_module("""
 @vardeps _lambda, _K, _V, _rayleighZenithLength, _mieZenithLength, _up, _EE, 
 @vardeps _cutoffAngle, _steepness, _turbidity, _reileighCoefficient
 @vardeps _mieCoefficient, _mieDirectionalG, AngularDiameterCos
+@vardeps backgroundElevation, backgroundAzimuth
 
 #define SPECULAR_GGX 0
 #define SPECULAR_BLINN 1
@@ -131,12 +132,32 @@ void AtmosphericScattering(DirectionalLight light, vec3 worldNormal,
 
 // Get sky color
 vec3 Sky(DirectionalLight sun, vec3 viewDir) {
+    // Rotate the view direction to control background orientation
+    // This preserves all atmospheric physics while changing which direction looks "gray"
+    float cosElevOffset = cos(backgroundElevation);
+    float sinElevOffset = sin(backgroundElevation);
+    float cosAzimOffset = cos(backgroundAzimuth);
+    float sinAzimOffset = sin(backgroundAzimuth);
+    
+    // Simple rotation around Y axis (azimuth) then X axis (elevation)
+    vec3 rotatedViewDir = viewDir;
+    // Rotate around Y (azimuth)
+    float newX = rotatedViewDir.x * cosAzimOffset - rotatedViewDir.z * sinAzimOffset;
+    float newZ = rotatedViewDir.x * sinAzimOffset + rotatedViewDir.z * cosAzimOffset;
+    rotatedViewDir.x = newX;
+    rotatedViewDir.z = newZ;
+    
+    // Rotate around X (elevation)
+    float newY = rotatedViewDir.y * cosElevOffset - rotatedViewDir.z * sinElevOffset;
+    newZ = rotatedViewDir.y * sinElevOffset + rotatedViewDir.z * cosElevOffset;
+    rotatedViewDir.y = newY;
+    rotatedViewDir.z = newZ;
 
     float CosTheta;
     vec3 Lin;
     vec3 Fex;
 
-    AtmosphericScattering(sun, viewDir, CosTheta, Lin, Fex);
+    AtmosphericScattering(sun, rotatedViewDir, CosTheta, Lin, Fex);
 
     float sundisk = smoothstep(AngularDiameterCos,AngularDiameterCos+0.00002,CosTheta);
     vec3 L0 = sun.energy * 19000.0 * sundisk * Fex;
@@ -405,13 +426,17 @@ BasicSun = register_shader_module("""
 @inputs sun
 @outputs color
 @dependencies LightPackage
-@vardeps _EE
+@vardeps _EE, sunElevation, sunAzimuth
 DirectionalLight BasicSun()
 {
     DirectionalLight sun;
-    sun.direction = normalize(vec3(1,0.5,0.7));
+    // Use sunElevation and sunAzimuth for sun direction
+    float x = cos(sunElevation) * sin(sunAzimuth);
+    float y = sin(sunElevation);
+    float z = cos(sunElevation) * cos(sunAzimuth);
+    sun.direction = normalize(vec3(x, y, z));
     sun.color = SkyExtinxtion(sun)* 19.0;
-    sun.energy = sunIntensity(sun.direction.z) * _EE;
+    sun.energy = sunIntensity(max(0.0, sun.direction.z)) * _EE;
     sun.shadow_dist = 100.0;
     return sun;
 }

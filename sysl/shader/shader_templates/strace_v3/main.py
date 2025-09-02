@@ -5,12 +5,13 @@ Based on "https://www.shadertoy.com/view/3tKfDG"
 """
 import numpy as np
 from string import Template
-from ..shader_module import register_shader_module, SMMap
-from ..strace_v1 import CONSTANTS
+from ...shader_module import register_shader_module, SMMap
+from ..common import CONSTANTS
 
 CONSTANTS.update({
     "_EE": ("float", 1000.0),
 })
+
 mainImage = register_shader_module("""
 @name mainImage_v3
 @inputs color, fragCoord, resolution, ca, lig
@@ -225,7 +226,7 @@ SphereTraceV2 = register_shader_module("""
 @outputs col
 @dependencies SCENE_EXPRESSION
 @vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO, _RAYCAST_MAX_STEPS, 
-@vardeps _ADD_FLOOR_PLANE
+@vardeps _ADD_FLOOR_PLANE, _RAYCAST_CONSERVATIVE_STEPPING_RATE
 vec2 SphereTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
 
     vec2 res = vec2(-1.0,-1.0);
@@ -289,7 +290,7 @@ vec2 SphereTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
                 _s = i;
                 break;
             }
-            t += h.x;
+            t += h.x * _RAYCAST_CONSERVATIVE_STEPPING_RATE;
         }
     }
 

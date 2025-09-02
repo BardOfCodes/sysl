@@ -3,7 +3,7 @@ import zlib
 import torch as th
 import numpy as np
 import geolipi.symbolic as gls  
-import cisl.symbolic as csls
+import sysl.symbolic as sls
 import sympy as sp
 from geolipi.torch_compute import Sketcher
 
@@ -64,8 +64,8 @@ def recursive_encode_texture_tensor(expr: gls.GLFunction, sketcher: Sketcher, de
             bound_threshold = DEFAULT_BOUND_THRESHOLD
         b64_data_symbol, dtype, target_shape = extract_voxel_grid(sdf_grid, expr, sketcher)
 
-        return csls.EncodedSDFGrid3D(name, b64_data_symbol, target_shape, dtype, bound_threshold)
-    elif isinstance(expr, csls.RGBGrid3D):
+        return sls.EncodedSDFGrid3D(name, b64_data_symbol, target_shape, dtype, bound_threshold)
+    elif isinstance(expr, sls.RGBGrid3D):
         args = expr.args
         rgb_grid = args[0]
         name = args[1].name
@@ -76,8 +76,8 @@ def recursive_encode_texture_tensor(expr: gls.GLFunction, sketcher: Sketcher, de
         else:
             bound_threshold = DEFAULT_BOUND_THRESHOLD   
         b64_data_symbol_rgb, dtype, target_shape = extract_voxel_grid(rgb_grid, expr, sketcher, target_dtype=np.uint8)
-        return csls.EncodedRGBGrid3D(name, b64_data_symbol_rgb, target_shape, dtype, metallic, roughness, bound_threshold)
-    elif isinstance(expr, csls.LowPrecisionSDFGrid3D):
+        return sls.EncodedRGBGrid3D(name, b64_data_symbol_rgb, target_shape, dtype, metallic, roughness, bound_threshold)
+    elif isinstance(expr, sls.LowPrecisionSDFGrid3D):
         args = expr.args
         sdf_grid = args[0]
         name = args[1].name
@@ -113,24 +113,24 @@ def recursive_encode_texture_tensor(expr: gls.GLFunction, sketcher: Sketcher, de
                 expr = expr.__class__(coarse, name, bound_threshold)
                 sdf_grid = expr.args[0]
                 # b64_data_symbol, dtype, target_shape = extract_voxel_grid(data, expr, sketcher, target_dtype=np.uint8)
-                # return csls.EncodedLowPrecisionSDFGrid3D(name, b64_data_symbol, target_shape, dtype, bound_threshold)
+                # return sls.EncodedLowPrecisionSDFGrid3D(name, b64_data_symbol, target_shape, dtype, bound_threshold)
             else:
                 raise ValueError(f"Texture argument of LowPrecisionSDFGrid3D must be a tensor, got {type(sdf_grid)}")
         else:
             raise ValueError(f"Texture argument of LowPrecisionSDFGrid3D must be a tensor, got {type(sdf_grid)}")
 
         b64_data_symbol, dtype, target_shape = extract_voxel_grid(sdf_grid, expr, sketcher, target_dtype=np.uint8)
-        return csls.EncodedLowPrecisionSDFGrid3D(name, b64_data_symbol, target_shape, dtype, bound_threshold)
+        return sls.EncodedLowPrecisionSDFGrid3D(name, b64_data_symbol, target_shape, dtype, bound_threshold)
 
-    elif isinstance(expr, csls.EncodedSDFGrid3D):
+    elif isinstance(expr, sls.EncodedSDFGrid3D):
         args = expr.args
         assert len(args) in [5], "EncodedSDFGrid3D should have 4 or 5 arguments"
         return expr
-    elif isinstance(expr, csls.EncodedRGBGrid3D):
+    elif isinstance(expr, sls.EncodedRGBGrid3D):
         args = expr.args
         assert len(args) in [7], "EncodedRGBGrid3D should have 6 or 7 arguments"
         return expr
-    elif isinstance(expr, csls.EncodedLowPrecisionRGBGrid3D):
+    elif isinstance(expr, sls.EncodedLowPrecisionRGBGrid3D):
         args = expr.args
         assert len(args) in [5], "EncodedLowPrecisionRGBGrid3D should have 4 or 5 arguments"
         return expr
