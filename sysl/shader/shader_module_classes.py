@@ -213,3 +213,4 @@ class FixedArityShaderModule(ShaderModule):
             self.generate_code()
         return self.code
 
+
