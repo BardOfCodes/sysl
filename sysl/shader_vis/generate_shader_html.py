@@ -8,7 +8,7 @@ import json
 import os
 import html
 from jinja2 import Environment, FileSystemLoader
-from ..shader.ubo import get_variable_info_for_editing
+from ..shader.utils.ubo import get_variable_info_for_editing
 
 def generate_html(data, template_name='shader_vis.html.j2', output_file=None, mouse_control=True, resolution_via_scale=True, show_controls=False, backend='regl', layout_horizontal=False, allow_overflow=False, allow_singular_ubo_edit=False, enable_ubo_animation=False):
     """

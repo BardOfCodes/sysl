@@ -1,12 +1,12 @@
 
 from collections import deque, defaultdict
-from typing import List, Dict, Set  
+from typing import List, Dict, Set, Tuple  
 from string import Template
 import sympy as sp
 from .shader_module import SMMap, ShaderModule
 from .local_shader_context import LocalShaderContext, SCENE_EXPR_PROPS, mat_master_template
 from .shader_templates.common import CONSTANTS, UNIFORMS, PRELIMINARIES
-from .ubo import create_var_map_with_ubo, generate_glsl_var_declarations, generate_glsl_load_statements
+from .utils.ubo import create_var_map_with_ubo, generate_ubo_glsl_code, generate_inline_glsl_code
 
 GLSL_TEMPLATE = Template("""#version 300 es
 #ifdef GL_ES
@@ -56,12 +56,9 @@ class GlobalShaderContext:
         name = texture_data["name"]
         self.texture_registry[name] = texture_data
     def create_var_map(self, var_map_base, set_to_ubo=True):
-        """Create variable map with efficient UBO packing and store all related data."""
-        # Store for reference
+        """Create variable map and delegate UBO processing to UBO module."""
         self.var_map_base = var_map_base
         self.set_to_ubo = set_to_ubo
-        
-        # Create var map and UBO data using the new efficient packing
         self.var_map, self.ubo_data = create_var_map_with_ubo(var_map_base, set_to_ubo)
 
     def get_textures(self):
@@ -207,86 +204,24 @@ class GlobalShaderContext:
         code_lines.append("")  # Empty line for separation
         return "\n".join(code_lines)
     
-    def emit_varlinking(self, settings) -> str:
-        """Emit shader code to link variables (lightweight version)."""
-        if not self.var_map:
-            return None
+    def emit_varlinking(self, settings) -> Tuple[str, str]:
+        """
+        Emit shader code to link variables using UBO module.
         
-        # Check if we should use #define directives instead of loadParams
+        Returns:
+            Tuple of (variable_declarations, load_params_function)
+        """
+        if not self.var_map:
+            return "", "void loadParams() {}"
+        
         use_define_vars = settings.get("use_define_vars", False)
         
-        code_lines = ["// Varlinking"]
-        
-        # Emit UBO declaration if using UBO
         if self.set_to_ubo and self.ubo_data:
-            n_vec4s = self.ubo_data['n_vec4s']
-            code_lines.append(f"layout(std140) uniform UBO_PARAMS_MASTER {{")
-            code_lines.append(f"    vec4 UBO_PARAMS[{n_vec4s}];")
-            code_lines.append("};")
-        
-        # Generate variable declarations and assignments
-        if self.set_to_ubo and self.ubo_data:
-            if use_define_vars:
-                # Use #define directives for direct variable mapping
-                code_lines.append("// Variable definitions using #define")
-                var_mapping = self.ubo_data['var_mapping']
-                
-                for var_name, mapping_info in var_mapping.items():
-                    vec4_index = mapping_info['vec4_index']
-                    components = mapping_info['components']
-                    var_type = mapping_info['type']
-                    
-                    # Generate appropriate #define based on variable type
-                    if var_type == 'bool':
-                        # Convert float back to bool for #define
-                        code_lines.append(f"#define {var_name} (UBO_PARAMS[{vec4_index}].{components} > 0.5)")
-                    elif var_type == 'int':
-                        # Convert float to int for #define
-                        code_lines.append(f"#define {var_name} int(UBO_PARAMS[{vec4_index}].{components})")
-                    else:
-                        # Direct assignment for float, vec2, vec3, vec4
-                        code_lines.append(f"#define {var_name} UBO_PARAMS[{vec4_index}].{components}")
-                
-                # Create empty loadParams function (still needed for compatibility)
-                code_lines.append("void loadParams() {")
-                code_lines.append("    // Variables initialized via #define directives")
-                code_lines.append("}")
-            else:
-                # Use traditional variable declarations + loadParams function
-                var_declarations = generate_glsl_var_declarations(self.ubo_data['var_mapping'])
-                code_lines.extend(var_declarations)
-                
-                # Generate loadParams function
-                load_statements = generate_glsl_load_statements(self.ubo_data['var_mapping'])
-                code_lines.append("void loadParams() {")
-                code_lines.extend(load_statements)
-                code_lines.append("}")
+            # Delegate UBO code generation to UBO module
+            return generate_ubo_glsl_code(self.ubo_data, use_define_vars)
         else:
-            # Fallback to inline declarations and assignments (non-UBO case)
-            if use_define_vars:
-                # Use #define directives for inline values
-                code_lines.append("// Variable definitions using #define")
-                for var_name, var_info in self.var_map.items():
-                    var_type, var_value = var_info["type"], var_info["value"]
-                    code_lines.append(f"#define {var_name} {var_value}")
-                
-                # Create empty loadParams function
-                code_lines.append("void loadParams() {")
-                code_lines.append("    // Variables initialized via #define directives")
-                code_lines.append("}")
-            else:
-                # Use traditional variable declarations + loadParams function
-                function_lines = []
-                for var_name, var_info in self.var_map.items():
-                    var_type, var_value = var_info["type"], var_info["value"]
-                    code_lines.append(f"{var_type} {var_name};")
-                    function_lines.append(f"    {var_name} = {var_value};")
-                code_lines.append("void loadParams() {")
-                code_lines.extend(function_lines)
-                code_lines.append("}")
-        
-        code_lines.append("")  # Empty line for separation
-        return "\n".join(code_lines)
+            # Delegate inline code generation to UBO module
+            return generate_inline_glsl_code(self.var_map, use_define_vars)
 
     def topological_sort(self) -> List[str]:
         """Perform topological sort of shader modules based on dependencies."""
@@ -363,10 +298,11 @@ class GlobalShaderContext:
             code_blocks.append(uniforms_code)
         
         # varlinking code
-        varlinking_code = self.emit_varlinking(settings)
-        if varlinking_code:
+        varlinking_declarations, load_params_function = self.emit_varlinking(settings)
+        if varlinking_declarations:
             load_params_call = "loadParams();"
-            code_blocks.append(varlinking_code)
+            code_blocks.append(varlinking_declarations)
+            code_blocks.append(load_params_function)
         else:
             load_params_call = ""
 
@@ -395,18 +331,17 @@ class GlobalShaderContext:
             raise ValueError(f"Invalid target: {settings.get('target', 'GLSL')}")
         return real_code
     def get_uniforms(self):
-        new_uniforms = {}
-        new_uniforms.update(self.uniforms)
+        """Get uniforms including UBO data if available."""
+        uniforms = self.uniforms.copy()
         
-        # Add UBO data if it was created during var map creation
         if self.set_to_ubo and self.ubo_data:
-            new_uniforms["UBO_PARAMS"] = {
-                "type": "uniform_buffer",
-                "binding": 0,  # UBO binding point
-                **self.ubo_data  # Include data_b64, shape, dtype, n_vec4s, var_mapping
+            uniforms["UBO_PARAMS"] = {
+                "type": "uniform_buffer", 
+                "binding": 0,
+                **self.ubo_data
             }
         
-        return new_uniforms
+        return uniforms
     
     def convert_uniforms_to_constants(self):
         del_names = []

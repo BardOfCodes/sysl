@@ -1,7 +1,7 @@
 # SDFGrid3D
 # Custom nodes.
 import numpy as np
-from .shader_module import register_shader_module, ShaderModule, SMMap
+from ...shader_module import register_shader_module, ShaderModule, SMMap
 from string import Template
 
 LOW_PRECISION_RANGE = np.sqrt(0.5)

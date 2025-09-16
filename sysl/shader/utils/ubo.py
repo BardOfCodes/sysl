@@ -353,6 +353,99 @@ def generate_glsl_load_statements(var_mapping: VarMapping, ubo_name: str = "UBO_
     return load_statements
 
 
+def generate_ubo_glsl_code(ubo_data: Optional[UBODataDict], use_define_vars: bool = False, 
+                          ubo_name: str = "UBO_PARAMS") -> Tuple[str, str]:
+    """
+    Generate complete UBO GLSL code including declarations and load function.
+    
+    Args:
+        ubo_data: UBO data dictionary or None
+        use_define_vars: Whether to use #define directives instead of loadParams
+        ubo_name: Name of the UBO array in GLSL
+        
+    Returns:
+        Tuple of (ubo_declarations, load_params_function)
+    """
+    if not ubo_data:
+        return "", "void loadParams() {}"
+    
+    code_lines = ["// UBO Variables"]
+    n_vec4s = ubo_data['n_vec4s']
+    var_mapping = ubo_data['var_mapping']
+    
+    # UBO declaration
+    code_lines.append(f"layout(std140) uniform UBO_PARAMS_MASTER {{")
+    code_lines.append(f"    vec4 {ubo_name}[{n_vec4s}];")
+    code_lines.append("};")
+    
+    if use_define_vars:
+        # Use #define directives for direct variable mapping
+        code_lines.append("// Variable definitions using #define")
+        
+        for var_name, mapping_info in var_mapping.items():
+            vec4_index = mapping_info['vec4_index']
+            components = mapping_info['components']
+            var_type = mapping_info['type']
+            
+            # Generate appropriate #define based on variable type
+            if var_type == 'bool':
+                code_lines.append(f"#define {var_name} ({ubo_name}[{vec4_index}].{components} > 0.5)")
+            elif var_type == 'int':
+                code_lines.append(f"#define {var_name} int({ubo_name}[{vec4_index}].{components})")
+            else:
+                code_lines.append(f"#define {var_name} {ubo_name}[{vec4_index}].{components}")
+        
+        load_params_code = "void loadParams() {\n    // Variables initialized via #define directives\n}"
+    else:
+        # Use traditional variable declarations + loadParams function
+        var_declarations = generate_glsl_var_declarations(var_mapping)
+        code_lines.extend(var_declarations)
+        
+        # Generate loadParams function
+        load_statements = generate_glsl_load_statements(var_mapping, ubo_name)
+        load_params_code = "void loadParams() {\n" + "\n".join(load_statements) + "\n}"
+    
+    ubo_declarations = "\n".join(code_lines)
+    return ubo_declarations, load_params_code
+
+
+def generate_inline_glsl_code(var_map: Dict[str, Dict[str, str]], use_define_vars: bool = False) -> Tuple[str, str]:
+    """
+    Generate inline variable GLSL code (non-UBO case).
+    
+    Args:
+        var_map: Variable mapping with type and value
+        use_define_vars: Whether to use #define directives instead of loadParams
+        
+    Returns:
+        Tuple of (variable_declarations, load_params_function)
+    """
+    if not var_map:
+        return "", "void loadParams() {}"
+    
+    code_lines = ["// Inline Variables"]
+    
+    if use_define_vars:
+        # Use #define directives for inline values
+        for var_name, var_info in var_map.items():
+            var_type, var_value = var_info["type"], var_info["value"]
+            code_lines.append(f"#define {var_name} {var_value}")
+        
+        load_params_code = "void loadParams() {\n    // Variables initialized via #define directives\n}"
+    else:
+        # Use traditional variable declarations + loadParams function
+        function_lines = []
+        for var_name, var_info in var_map.items():
+            var_type, var_value = var_info["type"], var_info["value"]
+            code_lines.append(f"{var_type} {var_name};")
+            function_lines.append(f"    {var_name} = {var_value};")
+        
+        load_params_code = "void loadParams() {\n" + "\n".join(function_lines) + "\n}"
+    
+    variable_declarations = "\n".join(code_lines)
+    return variable_declarations, load_params_code
+
+
 def create_var_map_with_ubo(var_map_base: VarMapBase, set_to_ubo: bool = True) -> Tuple[Dict[str, Dict[str, str]], Optional[UBODataDict]]:
     """
     Create variable map and UBO data in one step.

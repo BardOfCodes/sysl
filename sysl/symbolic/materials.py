@@ -10,19 +10,16 @@ class SMPLMaterial(Material):
     """
     Apply the height field to the current height.
     """
-    ...
 
 @register_symbol
 class RGBMaterial(Material):
     """
     Apply the height field to the current height.
     """
-    ...
 
 @register_symbol
 class MaterialV3(Material):
     ...
-
 @register_symbol
 class NonEmissiveMaterialV3(MaterialV3):
     ...
@@ -33,20 +30,18 @@ class MatReference(MaterialV3):
     """
     Apply the height field to the current height.
     """
-    ...
 
 @register_symbol
 class RegisterMaterial(GLFunction):
     """
     Apply the height field to the current height.
     """
-    ...
 
 
 @register_symbol
 class RGBGrid3D(GLFunction):
     ...
-
+    
 @register_symbol
 class EncodedRGBGrid3D(MaterialV3):
     ...

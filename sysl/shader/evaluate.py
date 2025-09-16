@@ -550,10 +550,10 @@ def eval_mat_register(expression: sls.RegisterMaterial, global_sc) -> GlobalShad
     elif len(processed_params) == 6:
         code_lines = mat_v3_template.substitute(
             albedo=processed_params[0],
-            emissive=processed_params[1],
-            roughness=processed_params[2],
-            clearcoat=processed_params[3],
-            metallic=processed_params[4]
+            roughness=processed_params[1],
+            clearcoat=processed_params[2],
+            metallic=processed_params[3],
+            emissive=processed_params[4]
         )
     for code_line in code_lines.split("\n"):
         global_sc.local_sc.add_codeline(code_line)

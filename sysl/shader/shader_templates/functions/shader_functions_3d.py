@@ -9,8 +9,7 @@ Sphere3D = register_shader_module("""
 float Sphere3D( vec3 p, float s )
 {
   return length(p)-s;
-}
-""")
+}""")
 
 
 Box3D = register_shader_module("""
@@ -22,8 +21,7 @@ float Box3D( vec3 p, vec3 b )
 {
   vec3 d = abs(p) - b;
   return length(max(d,0.0)) + min(max(d.x,max(d.y,d.z)),0.0);
-}
-""")
+}""")
 
 Cuboid3D = register_shader_module("""
 @name Cuboid3D
@@ -34,8 +32,7 @@ float Cuboid3D( vec3 p, vec3 b )
 {
   vec3 d = abs(p) - b;
   return length(max(d,0.0)) + min(max(d.x,max(d.y,d.z)),0.0);
-}
-""")
+}""")
 
 RoundedBox3D = register_shader_module("""
 @name RoundedBox3D
@@ -647,156 +644,4 @@ float InexactAnisotropicGaussian3D( vec3 p, vec3 center, vec3 axial_radii, float
   vec3 q = -((p - center) ** 2) / (2 * axial_radii ** 2);
   float base_sdf = scale_constant * exp(q.x + q.y + q.z);
   return base_sdf;
-}
-""")
-
-neo_revolve = register_shader_module("""
-@name neo_revolve
-@inputs q, offset, rotate
-@outputs res
-@dependencies
-vec3 neo_revolve( in vec3 q, float offset, float rotate)
-{
-    q.xz = vec2(length(q.xy)-offset,q.z); 
-    q.xz = mat2(cos(rotate),sin(rotate),-sin(rotate),cos(rotate)) * q.xz;
-    return q;
 }""")
-
-neo_extrude = register_shader_module("""
-@name neo_extrude
-@inputs d, z, h, r
-@outputs res
-@dependencies
-vec4 neo_extrude( in vec4 d, vec4 z, in float h, float r )
-{
-    vec4 qx = d + dSet(r);
-    vec4 qy = dAbs(z) - dSet(h);
-    
-    vec4 d1 = dMin(dMax(qx,qy),0.0);
-    vec4 d2 = dLength( dMax(qx,0.0), dMax(qy,0.0) );
-    return d1 + d2 - dSet(r);
-}""")
-
-neo_dfBox = register_shader_module("""
-@name neo_dfBox
-@inputs px, py, b, r
-@outputs res
-@dependencies
-vec4 neo_dfBox( vec4 px, vec4 py, vec2 b, vec4 r )
-{
-
-//vec3 dd = sdgBox(vec2(x.x,y.x), b, r );return vec4(dd.x, dd.y, 0.0, dd.z );
-    r.xy = (px.x>0.0)?r.xy : r.zw;
-    r.x  = (py.x>0.0)?r.x  : r.y;
-
-    vec4 qx = dAbs(px) - dSet(b.x) + dSet(r.x);
-    vec4 qy = dAbs(py) - dSet(b.y) + dSet(r.x);
-
-    vec4 d = dMax(qx,qy);
-    if( d.x>0.0 ) d = dLength( dMax(qx,0.0), dMax(qy,0.0) );
-    
-    return d - dSet(r.x);
-}""")
-
-NeoPrim3D = register_shader_module("""
-@name NeoPrimitive3D
-@inputs pos, a, b, c
-@outputs dist
-@dependencies neo_revolve, neo_extrude, neo_dfBox
-
-vec4 dSet(  float a ) { return vec4( a, 0.0, 0.0, 0.0 ); }
-vec4 dSetX( float a ) { return vec4( a, 1.0, 0.0, 0.0 ); }
-vec4 dSetY( float a ) { return vec4( a, 0.0, 1.0, 0.0 ); }
-vec4 dSetZ( float a ) { return vec4( a, 0.0, 0.0, 1.0 ); }
-vec4 dSqr(  vec4  a ) { return vec4( a.x*a.x, 2.0*a.x*a.yzw ); }
-vec4 dMul(  vec4  a, vec4 b ) { return vec4( a.x*b.x, a.x*b.yzw + a.yzw*b.x ); }
-vec4 dSqrt( vec4  v ) { float s = sqrt(v.x); return vec4( s, 0.5*v.yzw/s ); }
-//vec4 dAbs( vec4 v ) { return vec4(abs(v.x), (v.x>0.0)?v.yzw:-v.yzw ); }
-vec4 dAbs(  vec4  v ) { return (v.x>0.0)?v:-v; }
-vec4 dMin(  vec4  a, float b ) { return (a.x<b) ? a : vec4(b,0.0,0.0,0.0); }
-vec4 dMax(  vec4  a, float b ) { return (a.x>b) ? a : vec4(b,0.0,0.0,0.0); }
-vec4 dMin(  vec4  a, vec4  b ) { return (a.x<b.x) ? a : b; }
-vec4 dMax(  vec4  a, vec4  b ) { return (a.x>b.x) ? a : b; }
-vec4 dLength( vec4 x, vec4 y, vec4 z ) { return dSqrt( dSqr(x) + dSqr(y) + dSqr(z) ); }
-vec4 dLength( vec4 x, vec4 y ) { return dSqrt( dSqr(x) + dSqr(y)); }
-
-struct Shape
-{
-    //----------------------------------------------------------------------
-    // 2D shape                 // this block of fields is primitive specific
-    //----------------------------------------------------------------------
-    float width;                // width
-    float height;               // height
-    float corner0;              // corner 0 rounding amount
-    float corner1;              // corner 1 rounding amount
-    float corner2;              // corner 2 rounding amount
-    float corner3;              // corner r 3ounding amount
-    //----------------------------------------------------------------------
-    // 2D global params         // this is common to all primitives
-    //----------------------------------------------------------------------
-    float thickness;            // it opens a hole in the 2D shape
-    //----------------------------------------------------------------------
-    // 2D to 3D.                // common to all prims. It's a revolution or extrussion
-    //----------------------------------------------------------------------
-    int   mode;                 // 0 = extrussion, 1 = revolution
-    float extrussion;           // if revolution, this is unused
-    float extrussionCorner1;    // if revolution, this offsets the 2D profile
-    float extrussionCorner2;    // if revolution, this rotates the 2D profile
-    //----------------------------------------------------------------------
-    // 3D modifier
-    //----------------------------------------------------------------------
-    float onion;                // converts the solid to a shell of thickiness "onion" units
-    float inflate;              // inflates the shape (with rounded/eucliedan corners) by "inflate" units
-};
-
-// --- 2D to 3D ---
-
-vec4 sdShape( vec4 x, vec4 y, vec4 z, in Shape shape )
-{
-    // 2D shape
-    vec4 d = neo_dfBox( x, z, vec2(shape.width,shape.height), vec4(shape.corner0,shape.corner1,shape.corner2,shape.corner3) );
-
-    // hole
-    {
-        float th = max(shape.extrussionCorner1,shape.extrussionCorner2)*0.5 + min(shape.width,shape.height)*0.5 - shape.thickness;
-        d = dAbs(d+dSet(th)) - dSet(th);
-    }
-
-    // extrude (if not, this is just a 2D SDF), great for painting!
-    if( shape.mode==0 )
-    {
-        float er = (y.x<0.0) ? shape.extrussionCorner1 : shape.extrussionCorner2;
-        
-        d = neo_extrude( d, y, shape.extrussion-er, er );
-    }
-
-    // onion
-    float onion = shape.onion;
-    if( onion>0.00000001 ) d = dAbs(d + dSet(onion))-dSet(onion);
-
-    // inflate
-    d -= dSet(shape.inflate);
-    
-    return d;
-}	
-
-float NeoPrim3D( in vec3 p, in vec2 size, vec4 corners, float thickness, int mode, vec3 extrusion, float onion, float inflate)
-{
-    Shape shape;
-    shape.width = size.x;
-    shape.height = size.y;
-    shape.corner0 = corners.x;
-    shape.corner1 = corners.y;
-    shape.corner2 = corners.z;
-    shape.corner3 = corners.w;
-    shape.thickness = thickness;
-    shape.mode = mode;
-    shape.extrussion = extrusion.x;
-    shape.extrussionCorner1 = extrusion.y;
-    shape.extrussionCorner2 = extrusion.z;
-    shape.onion = onion;
-    shape.inflate = inflate;
-    return sdShape( dSetX(p.x), dSetY(p.y), dSetZ(p.z), shape ).x;
-}
-""")
-
