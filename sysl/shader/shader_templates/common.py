@@ -47,10 +47,10 @@ UNIFORMS = {
         'type': 'vec2', "init_value": [512, 512],
         "min": [1, 1], "max": [10000, 10000]},
     "backgroundElevation": {
-        'type': 'float', "init_value": 0.0,
+        'type': 'float', "init_value": 0.5,
         "min": [-np.pi/4], "max": [np.pi/4],
     },
     "backgroundAzimuth": {
-        'type': 'float', "init_value": 0.0,
+        'type': 'float', "init_value": -2.0,
         "min": [-np.pi], "max": [np.pi]},
 }

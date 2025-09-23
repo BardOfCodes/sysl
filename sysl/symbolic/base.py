@@ -14,14 +14,20 @@ class MatSolid(GLFunction):
 
 @register_symbol
 class MatSolidV1(MatSolid):
-    ...
+    @classmethod
+    def default_spec(cls):
+        return {"expr": {"type": "Expr"}, "material": {"type": "Node[Material]"}}
 @register_symbol
 class MatSolidV2(MatSolid):
-    ...
+    @classmethod
+    def default_spec(cls):
+        return {"expr": {"type": "Expr"}, "material": {"type": "Node[Material]"}}
 
 @register_symbol
 class MatSolidV3(MatSolid):
-    ...
+    @classmethod
+    def default_spec(cls):
+        return {"expr": {"type": "Expr"}, "material": {"type": "Node[Material]"}}
 
 
 @register_symbol
@@ -29,19 +35,34 @@ class BoundedSolid(GLFunction):
     """
     Contains an SDF function and a material.
     """
+    @classmethod
+    def default_spec(cls):
+        return {
+            "expr": {"type": "Expr"},
+            "bounding": {"type": "Expr"},
+            "bound_threshold": {"type": "float", "optional": True}
+        }
 
 @register_symbol
 class GeomOnlySmoothUnion(gls.SmoothUnion):
-    ...
+    @classmethod
+    def default_spec(cls):
+        return {"expr_0": {"type": "Expr"}, "expr_1": {"type": "Expr"}, "k": {"type": "float"}}
 
 @register_symbol
 class EncodedSDFGrid3D(GLFunction):
-    ...
+    @classmethod
+    def default_spec(cls):
+        return {"data": {"type": "Tensor[float,(D,H,W)]"}}
 
 @register_symbol
 class LowPrecisionSDFGrid3D(GLFunction):
-    ...
+    @classmethod
+    def default_spec(cls):
+        return {"data": {"type": "Tensor[float,(D,H,W)]"}}
 
 @register_symbol
 class EncodedLowPrecisionSDFGrid3D(EncodedSDFGrid3D):
-    ...
+    @classmethod
+    def default_spec(cls):
+        return {"data": {"type": "Tensor[float,(D,H,W)]"}}

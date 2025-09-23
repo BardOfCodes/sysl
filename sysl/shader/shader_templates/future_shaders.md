@@ -70,3 +70,7 @@ https://www.shadertoy.com/view/ttXSzl
 https://www.shadertoy.com/view/4ltyD4
 
 https://www.shadertoy.com/view/WdXXR8
+
+https://www.shadertoy.com/view/WdlXRN
+
+https://www.shadertoy.com/view/wslSRn

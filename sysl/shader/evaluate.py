@@ -235,7 +235,10 @@ def eval_prim_sdf(expression: PRIM_TYPE, global_sc) -> GlobalShaderContext:
     sdf_name = f"sdf_{global_sc.local_sc.res_sdf_count}"
     global_sc.local_sc.res_sdf_count += 1
     # GLSL code for sphere (sphere_param[0] is the vec4 sphere parameters)
-    code_line = f"float {sdf_name} = {func_name}({cur_pos}, {box_param});"
+    if len(shader_params) >= 1:
+        code_line = f"float {sdf_name} = {func_name}({cur_pos}, {box_param});"
+    else:
+        code_line = f"float {sdf_name} = {func_name}({cur_pos});"
     global_sc.local_sc.add_codeline(code_line)
     global_sc.local_sc.add_dependency(func_name)
     global_sc.add_shader_module(func_name)
