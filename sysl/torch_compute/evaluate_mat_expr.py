@@ -22,7 +22,7 @@ from geolipi.symbolic.symbol_types import (
     TRANSFORM_TYPE,
     POSITIONALMOD_TYPE,
     SDFMOD_TYPE,
-    HIGERPRIM_TYPE,
+    HIGHER_PRIM_TYPE,
     EXPR_TYPE,
     SUPERSET_TYPE
 )
