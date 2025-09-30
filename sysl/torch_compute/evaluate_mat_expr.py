@@ -14,7 +14,7 @@ from geolipi.symbolic.base import GLExpr, GLFunction
 import geolipi.symbolic as gls
 from geolipi.symbolic.resolve import resolve_macros
 from geolipi.symbolic import Revolution3D
-from geolipi.symbolic.types import (
+from geolipi.symbolic.symbol_types import (
     MACRO_TYPE,
     MOD_TYPE,
     PRIM_TYPE,
@@ -28,7 +28,7 @@ from geolipi.symbolic.types import (
 )
 from geolipi.torch_compute.sketcher import Sketcher
 from geolipi.torch_compute.maps import PRIMITIVE_MAP
-from geolipi.torch_compute.common import EPSILON
+from geolipi.torch_compute.constants import EPSILON
 from geolipi.torch_compute.sympy_to_torch import SYMPY_TO_TORCH, TEXT_TO_SYMPY
 from geolipi.torch_compute.evaluate_expression import _parse_param_from_expr
 ### Create a Evaluate wrapper -> This will create the coords and may be different in different derivative languages.
