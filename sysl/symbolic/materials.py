@@ -62,7 +62,7 @@ class RegisterMaterial(GLFunction):
     """
     @classmethod
     def default_spec(cls):
-        return {"name": {"type": "str"}, "material": {"type": "Node[Material]"}}
+        return {"name": {"type": "str"}, "material": {"type": "Expr"}}
 
 
 @register_symbol

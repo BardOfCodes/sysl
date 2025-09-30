@@ -16,18 +16,18 @@ class MatSolid(GLFunction):
 class MatSolidV1(MatSolid):
     @classmethod
     def default_spec(cls):
-        return {"expr": {"type": "Expr"}, "material": {"type": "Node[Material]"}}
+        return {"solid": {"type": "Expr"}, "material": {"type": "Expr"}}
 @register_symbol
 class MatSolidV2(MatSolid):
     @classmethod
     def default_spec(cls):
-        return {"expr": {"type": "Expr"}, "material": {"type": "Node[Material]"}}
+        return {"solid": {"type": "Expr"}, "material": {"type": "Expr"}}
 
 @register_symbol
 class MatSolidV3(MatSolid):
     @classmethod
     def default_spec(cls):
-        return {"expr": {"type": "Expr"}, "material": {"type": "Node[Material]"}}
+        return {"solid": {"type": "Expr"}, "material": {"type": "Expr"}}
 
 
 @register_symbol

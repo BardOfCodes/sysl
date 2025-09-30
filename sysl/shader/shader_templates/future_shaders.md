@@ -74,3 +74,9 @@ https://www.shadertoy.com/view/WdXXR8
 https://www.shadertoy.com/view/WdlXRN
 
 https://www.shadertoy.com/view/wslSRn
+
+https://www.shadertoy.com/view/wlyXzt
+
+https://www.shadertoy.com/view/styGDw
+
+# Also consider different Camera Controls. DOF effects.

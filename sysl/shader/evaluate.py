@@ -10,7 +10,7 @@ if sys.version_info >= (3, 11):
 else:
     from geolipi.torch_compute.patched_functools import singledispatch
 import geolipi.symbolic as gls
-from geolipi.symbolic.types import (
+from geolipi.symbolic.symbol_types import (
     MACRO_TYPE,
     MOD_TYPE,
     PRIM_TYPE,
@@ -32,19 +32,25 @@ from .local_shader_context import SCENE_EXPR_PROPS, MATERIAL_EXPR_PROPS
 from .param_evaluate import _inline_parse_param_from_expr
 
 DEFAULT_BOUND_THRESHOLD = 0.02
+
+DEFAULT_SETTINGS = {
+    "render_mode": "v3",
+    "variables": {
+        "_ADD_FLOOR_PLANE": False,
+        "_RAYCAST_MAX_STEPS": 200,
+        "_RAYCAST_CONSERVATIVE_STEPPING_RATE": 0.99,
+        "_AA": 2,   
+        "castShadows": True,
+    },
+    "extract_vars": False,
+    "use_define_vars": False
+}
 # V1 -> Just a single expression.
 def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr, 
                        settings: Dict[str, Any] | None = None, 
                        return_shader_context: bool=False) -> type_union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
     if settings is None:
-        settings = {
-        "render_mode": "v3",
-            "variables": {
-                "_RAYCAST_MAX_STEPS": 150,
-                "_ADD_FLOOR_PLANE": False,
-                "_AA": 4,
-            }
-        }
+        settings = DEFAULT_SETTINGS
     extract_vars = settings.get("extract_vars", True)
     set_to_ubo = settings.get("set_to_ubo", True)
 
