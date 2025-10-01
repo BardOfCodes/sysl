@@ -11,6 +11,7 @@ class MatSolid(GLFunction):
     """
     Contains an SDF function and a material.
     """
+    symbol_category = "sysl_base"
 
 @register_symbol
 class MatSolidV1(MatSolid):
@@ -35,6 +36,7 @@ class BoundedSolid(GLFunction):
     """
     Contains an SDF function and a material.
     """
+    symbol_category = "sysl_base"
     @classmethod
     def default_spec(cls):
         return {
@@ -45,6 +47,7 @@ class BoundedSolid(GLFunction):
 
 @register_symbol
 class GeomOnlySmoothUnion(gls.SmoothUnion):
+    symbol_category = "sysl_base"
     @classmethod
     def default_spec(cls):
         return {"expr_0": {"type": "Expr"}, "expr_1": {"type": "Expr"}, "k": {"type": "float"}}

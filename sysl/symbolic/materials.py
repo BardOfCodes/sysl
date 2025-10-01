@@ -3,7 +3,7 @@ from geolipi.symbolic.registry import register_symbol
 
 
 class Material(GLFunction):
-    ...
+    symbol_category = "sysl_materials"
 
 @register_symbol
 class SMPLMaterial(Material):
@@ -57,6 +57,7 @@ class MatReference(MaterialV3):
 
 @register_symbol
 class RegisterMaterial(GLFunction):
+    symbol_category = "sysl_materials"
     """
     Apply the height field to the current height.
     """
