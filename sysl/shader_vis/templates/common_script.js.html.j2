@@ -160,12 +160,13 @@
   {% endif %}
 
   {% if show_controls %}
-  // Canvas size controls
+  // Resolution controls (renamed from Canvas size controls for clarity)
   document.getElementById('canvasWidth').addEventListener('input', (e) => {
     const value = parseInt(e.target.value);
     document.getElementById('canvasWidth_value').textContent = value;
     document.getElementById('canvas-container').style.width = value + 'px';
     resizeCanvas();
+    updateEffectiveResolution();
   });
 
   document.getElementById('canvasHeight').addEventListener('input', (e) => {
@@ -173,7 +174,23 @@
     document.getElementById('canvasHeight_value').textContent = value;
     document.getElementById('canvas-container').style.height = value + 'px';
     resizeCanvas();
+    updateEffectiveResolution();
   });
+  
+  // Function to update effective resolution display
+  function updateEffectiveResolution() {
+    {% if resolution_via_scale %}
+    const effectiveRes = document.getElementById('effective_resolution');
+    if (effectiveRes) {
+      const width = parseInt(document.getElementById('canvasWidth').value);
+      const height = parseInt(document.getElementById('canvasHeight').value);
+      const scale = uniformValues.resolutionScale || 1.0;
+      const effectiveWidth = Math.floor(width * scale);
+      const effectiveHeight = Math.floor(height * scale);
+      effectiveRes.textContent = `${effectiveWidth} × ${effectiveHeight}`;
+    }
+    {% endif %}
+  }
 
   // Setup control event listeners
   {% for uniform in uniforms %}
@@ -208,10 +225,14 @@
   document.getElementById('resolutionScale').addEventListener('input', (e) => {
     const value = parseFloat(e.target.value);
     uniformValues.resolutionScale = value;
-    document.getElementById('resolutionScale_value').textContent = e.target.value;
+    document.getElementById('resolutionScale_value').textContent = value.toFixed(1);
     // Trigger resize to recalculate resolution
     resizeCanvas();
+    updateEffectiveResolution();
   });
+  
+  // Initial update of effective resolution display
+  updateEffectiveResolution();
   {% endif %}
 
   // Static shader code for reset (loaded from template)

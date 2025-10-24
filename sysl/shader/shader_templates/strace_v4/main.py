@@ -11,11 +11,52 @@ CONSTANTS.update({
     "_EE": ("float", 1000.0),
 })
 
+MATPoint = register_shader_module("""
+@name MATPoint
+@inputs x, mat
+@outputs mat
+@dependencies BaseMaterials_v4
+struct MATPoint {
+    float x;
+    Material mat;
+};
+""")
+
+
+MaterialV4 = register_shader_module("""
+@name MaterialV4
+@inputs albedo, emissive, mrc
+@outputs mat
+@dependencies BaseMaterials_v4
+@vardeps 
+Material MaterialV4(vec3 albedo, vec3 emissive, vec3 mrc)
+{   
+    Material mat;
+    mat.albedo = albedo;
+    mat.emissive = emissive;
+    mat.mrc = mrc;
+    return mat;
+}
+""")
+
+background_v4 = register_shader_module("""
+@name background_v4
+@inputs r, sun
+@outputs color
+@dependencies LightPackage_v4 
+@vardeps 
+vec3 background(vec3 r, DirectionalLight sun)
+{
+    return Sky(sun, r);
+    // return mix(vec3(0.452,0.551,0.995),vec3(0.652,0.697,0.995), d.z*0.5+0.5);
+}
+""")
+
 mainImage = register_shader_module("""
-@name mainImage_v3
+@name mainImage_v4
 @inputs color, fragCoord, resolution, ca, lig
 @outputs color
-@dependencies  setCamera_v1, LightPackage, ShadeRay, ToneMapping, BasicSun
+@dependencies  setCamera_v1, LightPackage_v4, ShadeRay_v4, ToneMapping, BasicSun_v4
 @vardeps cameraDistance, cameraOrigin, cameraAngleX, cameraAngleY, resolution
 @vardeps _FOCAL_LENGTH, _ZERO, _AA
 void mainImage(out vec4 color, in vec2 pxy )
@@ -46,7 +87,7 @@ void mainImage(out vec4 color, in vec2 pxy )
 
         vec3 rd = ca * normalize( vec3(p, _FOCAL_LENGTH) );
 
-        vec3 rgb = ShadeRay(sun, ro, rd, s);
+        vec3 rgb = ShadeRay_v4(sun, ro, rd, s);
         rgb = ToneMapping(rgb);
         tot += rgb;
     }
@@ -57,24 +98,12 @@ void mainImage(out vec4 color, in vec2 pxy )
 }
 """)
 
-background = register_shader_module("""
-@name background
-@inputs r, sun
-@outputs color
-@dependencies LightPackage 
-@vardeps 
-vec3 background(vec3 r, DirectionalLight sun)
-{
-    return Sky(sun, r);
-    // return mix(vec3(0.452,0.551,0.995),vec3(0.652,0.697,0.995), d.z*0.5+0.5);
-}
-""")
 
-ShadeRay = register_shader_module("""
-@name ShadeRay
+ShadeRay_v4 = register_shader_module("""
+@name ShadeRay_v4
 @inputs sun, sky
 @outputs color
-@dependencies LightPackage, SphereTrace, background, SCENE_NORMAL, SCENE_MATERIAL
+@dependencies LightPackage_v4, SphereTrace_v4, background_v4, SCENE_NORMAL, SCENE_MATERIAL, MATPoint
 @vardeps 
 // LightPackage funccalls - DirectionLight, Sky, Env, Shadow, Shade, SkyAmbient
 // Background color
@@ -83,15 +112,16 @@ ShadeRay = register_shader_module("""
 // ro : Ray origin
 // rd : Ray direction
 // steps : Number of trace steps
-vec3 ShadeRay(DirectionalLight sun, vec3 ro, vec3 rd, out int steps) {
+vec3 ShadeRay_v4(DirectionalLight sun, vec3 ro, vec3 rd, out int steps) {
 
     // Hit and number of steps
     bool hit = false;
     int s = 0;
     
     // primary ray
-    vec2 res = SphereTrace(ro, rd, 100.0, hit, s);
+    MATPoint res = SphereTrace(ro, rd, 100.0, hit, s);
     float t = res.x;
+    Material mat = res.mat;
     steps += s;
 
     // Position 
@@ -104,13 +134,12 @@ vec3 ShadeRay(DirectionalLight sun, vec3 ro, vec3 rd, out int steps) {
     vec3 n = SCENE_NORMAL(pt);
 
     // Shade object with light
-    Material mat = SCENE_MATERIAL(pt, n, res.y);
     vec3 reflect_dir = reflect(rd, n);
     vec3 clearcoat = vec3(0);
     vec3 reflection;
 
     // reflection
-    if (mat.clearcoat > 0.0 || mat.roughness == 0.0) {
+    if (mat.mrc.z > 0.0 || mat.mrc.y == 0.0) {
 
         // secondary ray
         s = 0;
@@ -121,24 +150,22 @@ vec3 ShadeRay(DirectionalLight sun, vec3 ro, vec3 rd, out int steps) {
         if (hit) {
             vec3 rpt = pt + t * reflect_dir;
             vec3 rn = SCENE_NORMAL(rpt);
-            Material rmat = SCENE_MATERIAL(rpt, rn, res.y);
-
             vec3 sec_reflection = Env(reflect(reflect_dir, rn), sun);
-            clearcoat = Shade(sun, rmat, rpt, reflect_dir, rn, 
-                            sec_reflection, sec_reflection*mat.clearcoat);
+            clearcoat = Shade(sun, res.mat, rpt, reflect_dir, rn, 
+                            sec_reflection, sec_reflection*mat.mrc.z);
         } else
             clearcoat = Env(reflect_dir, sun);
     }
-    if (mat.roughness == 0.0)
+    if (mat.mrc.y == 0.0)
         reflection = clearcoat;
     else {
-        float r = 1.0/max(mat.roughness, 0.00001);
+        float r = 1.0/max(mat.mrc.y, 0.00001);
         float v = Shadow(pt+n*0.1, reflect_dir, 1000.0, r);
         reflection = mix(SkyAmbient(sun)*0.1, Env(reflect_dir, sun), v);
     }
 
 
-    clearcoat *= mat.clearcoat;
+    clearcoat *= mat.mrc.z;
 
     return Shade(sun, mat, pt, rd, n, reflection, clearcoat);
 }""")
@@ -147,16 +174,17 @@ CONSTANTS.update({
     "_ST_EPSILON": ("float", 0.0001),
 })
 
-SphereTrace = register_shader_module("""
-@name SphereTrace
+SphereTrace_v4 = register_shader_module("""
+@name SphereTrace_v4
 @inputs ro, rd, rdx, rdy, lig
 @outputs col
-@dependencies SCENE_EXPRESSION
+@dependencies SCENE_EXPRESSION, MatFloor_v4
 @vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO, _RAYCAST_MAX_STEPS, 
 @vardeps _ADD_FLOOR_PLANE, _RAYCAST_CONSERVATIVE_STEPPING_RATE
-vec2 SphereTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
+MATPoint SphereTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
 
-    vec2 res = vec2(-1.0,-1.0);
+    MATPoint res;
+    res.x = -1.0;
 
     // 1) Sphere cull: cheap dot/mul vs. complex SDF
     float b = dot(ro, ro) - _SCENE_RADIUS*_SCENE_RADIUS;
@@ -186,7 +214,7 @@ vec2 SphereTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
         float tp = -ro.y / rd.y;
         if (tp > 0.0 && tp < tmax) {
             tmax = tp;
-            res = vec2(tp, 1.0);
+            res.x = tp;
             _h = true;
             _s = 0;
         }
@@ -210,9 +238,10 @@ vec2 SphereTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
         // 4) Ray‐march only in [tmin, tmax]
         float t = tmin;
         for (int i = _ZERO; i < _RAYCAST_MAX_STEPS && t < tmax; i++) {
-            vec2 h = SCENE_EXPRESSION(ro + rd * t);
+            MATPoint h = SCENE_EXPRESSION(ro + rd * t);
             if (abs(h.x) < 0.0001 * t) {
-                res = vec2(t, h.y);
+                res.x = t;
+                res.mat = h.mat;
                 _h = true;
                 _s = i;
                 break;
@@ -224,22 +253,3 @@ vec2 SphereTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
     return res;
 }""")
 
-
-SCENE_NORMAL = register_shader_module("""
-@name SCENE_NORMAL
-@inputs p
-@outputs color
-@dependencies SCENE_EXPRESSION
-@vardeps 
-// Calculate object normal
-// p : point
-vec3 SCENE_NORMAL(in vec3 p )
-{
-  float eps = 0.001;
-  vec3 n;
-  float v = SCENE_EXPRESSION(p).x;
-  n.x = SCENE_EXPRESSION( vec3(p.x+eps, p.y, p.z) ).x - v;
-  n.y = SCENE_EXPRESSION( vec3(p.x, p.y+eps, p.z) ).x - v;
-  n.z = SCENE_EXPRESSION( vec3(p.x, p.y, p.z+eps) ).x - v;
-  return normalize(n);
-}""")

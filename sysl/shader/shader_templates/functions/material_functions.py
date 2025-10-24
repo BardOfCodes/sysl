@@ -47,6 +47,28 @@ vec2 MatSolidV3( vec2 res, float mat )
   return vec2(res.x, mat);
 } 
 """)
+
+
+MatSolidV4 = register_shader_module("""
+@name MatSolidV4
+@inputs sdf, mat
+@outputs res
+@dependencies MATPoint
+MATPoint MatSolidV4( float sdf, Material mat )
+{
+  MATPoint out_res;
+  out_res.x = sdf;
+  out_res.mat = mat;
+  return out_res;
+}
+MATPoint MatSolidV4( MATPoint res, Material mat )
+{ 
+  MATPoint out_res;
+  out_res.x = res.x;
+  out_res.mat = mat;
+  return  out_res;
+} 
+""")
 ### Mat Combinators
 
 n_ary_color_only_code = Template("""

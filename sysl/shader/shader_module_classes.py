@@ -31,6 +31,8 @@ class NAryShaderModule(ShaderModule):
         input_format = kwargs.get("input_format", None)
         assert input_format is not None, "Input format is required"
         self.input_formats.append(input_format)
+        if input_format[0] not in ["float", "vec2", "vec3", "vec4"]:
+            self.dependencies.append(input_format[0])
         self.hit_count += 1
 
     def generate_code(self):
@@ -199,6 +201,8 @@ class FixedArityShaderModule(ShaderModule):
         input_format = kwargs.get("input_format", None)
         assert input_format is not None, "Input format is required"
         self.input_formats.add(input_format)
+        if input_format[0] not in ["float", "vec2", "vec3", "vec4"]:
+            self.dependencies.append(input_format[0])
         self.hit_count += 1
     
     def generate_code(self):

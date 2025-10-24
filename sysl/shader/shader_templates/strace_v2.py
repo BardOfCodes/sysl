@@ -1,6 +1,7 @@
-"""
-This is derived from shadertoy code at: https://www.shadertoy.com/view/Xds3zN
-Original Author: Inigo Quilez
+
+credits = """
+// This is derived from shadertoy code at: https://www.shadertoy.com/view/Xds3zN
+// Original Author: Inigo Quilez
 """
 from ..shader_module import register_shader_module, SMMap
 from string import Template
@@ -13,6 +14,7 @@ def mainImageRGB_factor():
     mainImageRGB.dependencies = ["setCamera_v1", "getSunDirection_v1", "render_v2"]
     return mainImageRGB
 SMMap['mainImage_v2'] = mainImageRGB_factor
+
 
 raycast = register_shader_module("""
 @name raycast_v2

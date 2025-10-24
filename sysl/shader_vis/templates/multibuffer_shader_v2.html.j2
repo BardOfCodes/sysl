@@ -1,0 +1,72 @@
+{% extends "base.html.j2" %}
+{% block content %}
+
+<div class="w-full min-h-screen">
+  <!-- Multi-Buffer Shader Visualizer -->
+  <div class="w-full h-full bg-white">
+    <div class="w-full h-full {% if layout_horizontal %}flex flex-row gap-6 p-4{% else %}space-y-6 p-4{% endif %}">
+      
+      <!-- Canvas Area -->
+      <div class="{% if layout_horizontal %}flex-shrink-0{% else %}flex justify-center{% endif %}">
+        <div id="canvas-container" class="relative bg-black rounded-lg overflow-hidden shadow-lg" style="width: 512px; height: 512px;">
+          <canvas
+            id="glcanvas"
+            class="absolute inset-0 w-full h-full"
+          ></canvas>
+        </div>
+      </div>
+
+      <!-- Controls Area -->
+      <div class="{% if layout_horizontal %}flex-1 {% if not allow_overflow %}h-[512px] overflow-y-auto{% endif %}{% else %}w-full{% endif %}">
+        
+        <!-- Multi-Pass Specific Controls -->
+        {% if show_controls %}
+        <div class="mb-4">
+          <div class="bg-gray-50 p-4 rounded-lg shadow-sm">
+            <details open class="bg-gray-100 border border-gray-300 rounded-lg">
+              <summary class="px-3 py-2 font-medium text-gray-800 cursor-pointer hover:bg-gray-200">
+                Multi-Pass Rendering
+              </summary>
+              <div class="px-3 pb-3 space-y-4">
+                <!-- Play/Pause Controls -->
+                <div class="flex gap-2 pt-3">
+                  <button id="play-pause-btn" class="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded font-medium transition-colors">
+                    Pause
+                  </button>
+                  <button id="step-btn" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded font-medium transition-colors">
+                    Step Frame
+                  </button>
+                  <button id="reset-btn" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded font-medium transition-colors">
+                    Reset Buffers
+                  </button>
+                </div>
+                
+                <!-- Debug Info -->
+                <div class="bg-white border border-gray-200 rounded p-3 font-mono text-sm">
+                  <div class="mb-1">
+                    <span class="font-semibold text-gray-700">Frame:</span> 
+                    <span id="frame-num" class="text-blue-600">0</span> | 
+                    <span class="font-semibold text-gray-700">Status:</span> 
+                    <span id="status" class="text-green-600">Playing</span>
+                  </div>
+                  <div id="buffer-state" class="text-xs text-gray-500 mt-2"></div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </div>
+        {% endif %}
+        
+        <!-- Standard Controls (uniforms, mouse, resolution, etc.) -->
+        {% include "controls.html.j2" %}
+      </div>
+      
+    </div>
+  </div>
+</div>
+
+<!-- Include Multi-Buffer Script Component -->
+{% include "twgl_multibuffer_script_simple.js.html.j2" %}
+
+{% endblock %}
+

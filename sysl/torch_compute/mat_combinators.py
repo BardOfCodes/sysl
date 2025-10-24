@@ -1,6 +1,6 @@
 import numpy as np
 import torch as th
-from geolipi.torch_compute.common import EPSILON
+from geolipi.torch_compute.constants import EPSILON
 
 
 def sdf_union(*args):
@@ -146,10 +146,14 @@ def sdf_smooth_union(sdf_a, sdf_b, k):
     x0 = sdf_a
     if x0.dim() == 1 or x0.shape[-1] == 1:
         var_a, var_b = sdf_a, sdf_b
+        h = th.clamp(0.5 + 0.5 * (var_b - var_a) / (k + EPSILON), min=0.0, max=1.0)
+        sdf = mix(sdf_b, sdf_a, h) - k * h * (1 - h);
     else:
         var_a, var_b = sdf_a[..., :1], sdf_b[..., :1]
-    h = th.clamp(0.5 + 0.5 * (var_b - var_a) / (k + EPSILON), min=0.0, max=1.0)
-    sdf = mix(sdf_b, sdf_a, h) - k * h * (1 - h);
+        h = th.clamp(0.5 + 0.5 * (var_b - var_a) / (k + EPSILON), min=0.0, max=1.0)
+        sdf = mix(var_b, var_a, h) - k * h * (1 - h);
+        rest_out = mix(sdf_b[..., 1:], sdf_a[..., 1:], h)
+        sdf = th.cat([sdf, rest_out], dim=-1)
     return sdf
 
 def sdf_geom_only_smooth_union(sdf_a, sdf_b, k):

@@ -67,13 +67,12 @@ class RegisterMaterial(GLFunction):
 
 
 @register_symbol
-class RGBGrid3D(GLFunction):
+class MaterialV4(Material):
     @classmethod
     def default_spec(cls):
-        return {"data": {"type": "Tensor[float,(D,H,W,3)]"}}
+        return {
+            "albedo": {"type": "Vector[3]"},
+            "emissive": {"type": "Vector[3]"},
+            "mrc": {"type": "Vector[3]"},
+        }
     
-@register_symbol
-class EncodedRGBGrid3D(MaterialV3):
-    @classmethod
-    def default_spec(cls):
-        return {"data": {"type": "Tensor[float,(D,H,W,3)]"}}

@@ -1,0 +1,399 @@
+<!-- TWGL Multi-Buffer Shader Script -->
+<script type="module">
+  {% if load_textures %}
+  {% include "twgl_texture_loader.js.j2" %}
+  {% endif %}
+  
+  // Include common script functionality first
+  // Note: common_script.js.html.j2 sets up uniformValues and handles resolution/canvas sizing
+  {% include "common_script.js.html.j2" %}
+  
+  // Multi-buffer specific data
+  const passes = {{ passes | tojson }};
+  const fboSpecs = {{ fbo_specs | tojson }};
+  const selfRefBuffers = {{ self_referencing_fbos | tojson }};
+  
+  // Extract texture registry from Jinja
+  const textureRegistry = {
+    {% for texname, texdata in textures.items() %}
+    "{{ texname }}": {{ texdata | tojson }},
+    {% endfor %}
+  };
+  
+  // Store original shader code for reset functionality
+  const originalShaderCodes = passes.map(p => p.shader_code);
+  const staticShaderCodes = [...originalShaderCodes];
+
+  // WebGL context is already created in common_script.js
+  gl.getExtension('EXT_color_buffer_float');
+
+  // Vertex shader
+  const vertexShaderSource = `#version 300 es
+  in vec2 position;
+  void main() {
+    gl_Position = vec4(position, 0.0, 1.0);
+  }`;
+
+  // Fullscreen quad (using different variable names to avoid conflict with common_script.js)
+  const multipassArrays = {
+    position: { numComponents: 2, data: [-1,-1, 1,-1, -1,1, 1,1] }
+  };
+  const multipassBufferInfo = twgl.createBufferInfoFromArrays(gl, multipassArrays);
+
+  // Create framebuffers based on specifications
+  let fbos = {};
+  let currentFrame = 0;
+  
+  // Map FBO types to WebGL formats
+  function getFBOAttachment(type) {
+    const formatMap = {
+      'float': {
+        internalFormat: gl.R32F,
+        format: gl.RED,
+        type: gl.FLOAT,
+        min: gl.NEAREST,
+        mag: gl.NEAREST,
+        wrap: gl.CLAMP_TO_EDGE
+      },
+      'vec2': {
+        internalFormat: gl.RG32F,
+        format: gl.RG,
+        type: gl.FLOAT,
+        min: gl.NEAREST,
+        mag: gl.NEAREST,
+        wrap: gl.CLAMP_TO_EDGE
+      },
+      'vec3': {
+        internalFormat: gl.RGB32F,
+        format: gl.RGB,
+        type: gl.FLOAT,
+        min: gl.NEAREST,
+        mag: gl.NEAREST,
+        wrap: gl.CLAMP_TO_EDGE
+      },
+      'vec4': {
+        internalFormat: gl.RGBA32F,
+        format: gl.RGBA,
+        type: gl.FLOAT,
+        min: gl.NEAREST,
+        mag: gl.NEAREST,
+        wrap: gl.CLAMP_TO_EDGE
+      }
+    };
+    return formatMap[type] || formatMap['vec4'];
+  }
+
+  // Function to create/recreate FBOs with current resolution
+  function createFBOs() {
+    // Clean up old FBOs
+    for (const fbo of Object.values(fbos)) {
+      if (fbo && fbo.framebuffer) {
+        gl.deleteFramebuffer(fbo.framebuffer);
+        if (fbo.attachments) {
+          fbo.attachments.forEach(att => {
+            if (att instanceof WebGLTexture) {
+              gl.deleteTexture(att);
+            }
+          });
+        }
+      }
+    }
+    fbos = {};
+    
+    // Get the actual rendering resolution from canvas
+    // This is already scaled by resolutionScale in resizeCanvas()
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // For each FBO spec, create the FBO(s)
+    for (const [name, spec] of Object.entries(fboSpecs)) {
+      // All FBOs should match the canvas resolution
+      // (spec.width/height are ignored - they were just initial hints)
+      const attachment = getFBOAttachment(spec.type);
+      
+      if (selfRefBuffers.includes(name)) {
+        // Create TWO buffers for ping-pong
+        fbos[name + '_0'] = twgl.createFramebufferInfo(gl, [attachment], width, height);
+        fbos[name + '_1'] = twgl.createFramebufferInfo(gl, [attachment], width, height);
+        console.log(`Created ${spec.type.toUpperCase()} ping-pong buffers: ${name}_0 and ${name}_1 (${width}x${height})`);
+      } else {
+        // Create ONE buffer
+        fbos[name] = twgl.createFramebufferInfo(gl, [attachment], width, height);
+        console.log(`Created ${spec.type.toUpperCase()} buffer: ${name} (${width}x${height})`);
+      }
+    }
+
+    // Clear all FBOs after creation
+    for (const [fboName, fbo] of Object.entries(fbos)) {
+      twgl.bindFramebufferInfo(gl, fbo);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+    twgl.bindFramebufferInfo(gl, null);
+    
+    // Reset frame counter when recreating FBOs
+    currentFrame = 0;
+  }
+  
+  // Initial FBO creation
+  createFBOs();
+
+  // Variables for loaded textures
+  let loadedTextures = {};
+  
+  // Compile shaders
+  let programs = [];
+  
+  function compileShaders(shaderCodes) {
+    // Clean up old programs
+    programs.forEach(prog => {
+      if (prog && prog.program) {
+        gl.deleteProgram(prog.program);
+      }
+    });
+    
+    programs = shaderCodes.map((shaderCode, i) => {
+      try {
+        const prog = twgl.createProgramInfo(gl, [vertexShaderSource, shaderCode]);
+        console.log(`Compiled shader ${i}`);
+        return prog;
+      } catch (error) {
+        console.error(`Error compiling shader ${i}:`, error);
+        // Return null to allow partial compilation
+        return null;
+      }
+    });
+    
+    return programs;
+  }
+  
+  
+  // Initial shader compilation
+  programs = compileShaders(passes.map(p => p.shader_code));
+
+  // Async initialization function
+  async function init() {
+    {% if load_textures %}
+    // Load textures before starting render loop
+    loadedTextures = await loadTextures(gl, textureRegistry);
+    {% endif %}
+    
+    // Start render loop
+    requestAnimationFrame(render);
+  }
+
+  {% if show_controls %}
+  let isPlaying = true;
+  let shouldStep = false;
+  let frameNum = 0;
+
+  document.getElementById('step-btn').onclick = () => {
+    isPlaying = false;
+    shouldStep = true;
+  };
+
+  document.getElementById('play-pause-btn').onclick = function() {
+    isPlaying = !isPlaying;
+    this.textContent = isPlaying ? 'Pause' : 'Play';
+  };
+
+  document.getElementById('reset-btn').onclick = () => {
+    frameNum = 0;
+    currentFrame = 0;
+    // Clear all buffers
+    selfRefBuffers.forEach(name => {
+      if (fbos[name + '_0']) {
+        twgl.bindFramebufferInfo(gl, fbos[name + '_0']);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      if (fbos[name + '_1']) {
+        twgl.bindFramebufferInfo(gl, fbos[name + '_1']);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+    });
+    twgl.bindFramebufferInfo(gl, null);
+  };
+  
+  // Reset shader code button (in multi-pass mode, resets to original shader codes)
+  document.getElementById('reset-shader-code').onclick = () => {
+    programs = compileShaders(originalShaderCodes);
+    passes.forEach((pass, i) => {
+      pass.shader_code = originalShaderCodes[i];
+    });
+    
+    // Reset frame counter and recreate FBOs
+    if (typeof frameNum !== 'undefined') {
+      frameNum = 0;
+    }
+    currentFrame = 0;
+    createFBOs();
+  };
+  
+  // Reset to defaults button (uniforms + shader)
+  const resetButton = document.getElementById('reset-shader');
+  if (resetButton) {
+    resetButton.onclick = () => {
+      // Reset uniform values (handled by common_script.js)
+      if (typeof resetUniformValues === 'function') {
+        resetUniformValues();
+      }
+      
+      // Reset shader code to original
+      programs = compileShaders(originalShaderCodes);
+      passes.forEach((pass, i) => {
+        pass.shader_code = originalShaderCodes[i];
+      });
+      
+      // Reset frame counter
+      frameNum = 0;
+      currentFrame = 0;
+      
+      // Recreate FBOs with default resolution
+      createFBOs();
+    };
+  }
+  
+  // Save render button
+  const saveButton = document.getElementById('save-render');
+  if (saveButton) {
+    saveButton.onclick = () => {
+      if (typeof saveRender === 'function') {
+        saveRender(() => {
+          // Render one frame for saving
+          render(performance.now());
+        });
+      }
+    };
+  }
+  
+  // Handle resolution changes
+  const originalResizeCanvas = window.resizeCanvas;
+  window.resizeCanvas = function() {
+    if (originalResizeCanvas) originalResizeCanvas();
+    // Recreate FBOs when canvas size changes
+    createFBOs();
+  };
+  
+  // Handle resolution scale changes
+  if (document.getElementById('resolutionScale')) {
+    const originalHandler = document.getElementById('resolutionScale').oninput;
+    document.getElementById('resolutionScale').oninput = function(e) {
+      if (originalHandler) originalHandler.call(this, e);
+      // Recreate FBOs when resolution scale changes
+      createFBOs();
+    };
+  }
+  {% endif %}
+
+  function render(timeMs) {
+    {% if show_controls %}
+    if (!isPlaying && !shouldStep) {
+      requestAnimationFrame(render);
+      return;
+    }
+    shouldStep = false;
+    frameNum++;
+    document.getElementById('frame-num').textContent = frameNum;
+    {% endif %}
+    
+    // Update time uniform in uniformValues (managed by common_script.js)
+    const time = timeMs * 0.001;
+    uniformValues.time = time;
+    
+    // Process each pass
+    passes.forEach((pass, passIdx) => {
+      // Figure out where to render to
+      let targetFBO = null;
+      if (pass.output_FBO !== 'image') {
+        if (selfRefBuffers.includes(pass.output_FBO)) {
+          // Use current frame index to pick buffer
+          targetFBO = fbos[pass.output_FBO + '_' + (currentFrame % 2)];
+        } else {
+          targetFBO = fbos[pass.output_FBO];
+        }
+      }
+
+      // Bind target
+      twgl.bindFramebufferInfo(gl, targetFBO);
+      
+      // Set viewport (important when rendering to canvas)
+      if (!targetFBO) {
+        gl.viewport(0, 0, canvas.width, canvas.height);
+      }
+      
+      // Clear if not self-referencing OR if rendering to canvas
+      if (!selfRefBuffers.includes(pass.output_FBO) || pass.output_FBO === 'image') {
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+
+      // Use program (skip if compilation failed)
+      if (!programs[passIdx]) {
+        console.error(`Skipping pass ${passIdx} - shader compilation failed`);
+        return; // Use return instead of continue in forEach
+      }
+      gl.useProgram(programs[passIdx].program);
+
+      // Setup uniforms - use uniformValues which contains all uniforms
+      const uniforms = {
+        ...uniformValues,  // Include all uniform values (time, camera params, etc.)
+        {% if load_textures %}
+        ...loadedTextures  // Include loaded textures
+        {% endif %}
+      };
+      
+      // All FBOs have the same size as the canvas, so resolution is always [canvas.width, canvas.height]
+      // This ensures all shader passes use the same resolution value
+      uniforms.resolution = [canvas.width, canvas.height];
+
+      // Add input textures
+      pass.input_FBOs.forEach(inputName => {
+        if (selfRefBuffers.includes(inputName)) {
+          // For self-referencing buffers:
+          // If we're reading from the same buffer we're writing to, read from the OTHER one
+          if (inputName === pass.output_FBO) {
+            // Read from the previous frame (opposite buffer)
+            const readIdx = 1 - (currentFrame % 2);
+            const fbo = fbos[inputName + '_' + readIdx];
+            if (!fbo || !fbo.attachments || !fbo.attachments[0]) {
+              console.error(`ERROR: FBO ${inputName}_${readIdx} has no attachments!`);
+              return;
+            }
+            uniforms[inputName] = fbo.attachments[0];
+          } else {
+            // Read from the current frame (same index)
+            const readIdx = currentFrame % 2;
+            const fbo = fbos[inputName + '_' + readIdx];
+            if (!fbo || !fbo.attachments || !fbo.attachments[0]) {
+              console.error(`ERROR: FBO ${inputName}_${readIdx} has no attachments!`);
+              return;
+            }
+            uniforms[inputName] = fbo.attachments[0];
+          }
+        } else {
+          const fbo = fbos[inputName];
+          if (!fbo || !fbo.attachments || !fbo.attachments[0]) {
+            console.error(`ERROR: FBO ${inputName} has no attachments!`);
+            return;
+          }
+          uniforms[inputName] = fbo.attachments[0];
+        }
+      });
+
+      // Set uniforms and draw
+      twgl.setUniforms(programs[passIdx], uniforms);
+      twgl.setBuffersAndAttributes(gl, programs[passIdx], multipassBufferInfo);
+      twgl.drawBufferInfo(gl, multipassBufferInfo, gl.TRIANGLE_STRIP);
+    });
+
+    // Increment frame counter for ping-pong
+    currentFrame++;
+    
+    requestAnimationFrame(render);
+  }
+
+  // Start initialization
+  init();
+</script>

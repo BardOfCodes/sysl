@@ -3,7 +3,7 @@
 import sys
 import sympy as sp
 import torch as th
-from typing import Optional, Union, Callable, Any, TypeVar
+from typing import Optional, Union as type_union, Callable, Any, TypeVar
 
 if sys.version_info >= (3, 11):
     from functools import singledispatch
@@ -109,7 +109,7 @@ def eval_prim(expression: PRIM_TYPE, sketcher: Sketcher,
               secondary_sketcher: Optional[Sketcher] = None, coords: th.Tensor = None,
               *args, **kwargs) -> th.Tensor:
     
-    if isinstance(expression, HIGERPRIM_TYPE):
+    if isinstance(expression, HIGHER_PRIM_TYPE):
         raise NotImplementedError(f"Higher order primitive {expression} not implemented")
     else:
         params = expression.args
@@ -136,7 +136,7 @@ def eval_mat_solid(expression: sls.MatSolid, sketcher: Sketcher,
     return out
 
 @rec_eval_mat_expr.register
-def eval_material(expression: sls.Material, sketcher: Sketcher,
+def eval_material(expression: type_union[sls.Material, sls.SphericalRGBGrid3D], sketcher: Sketcher,
                    secondary_sketcher: Optional[Sketcher] = None, coords: th.Tensor = None,
                    *args, **kwargs) -> th.Tensor:
     params = expression.args

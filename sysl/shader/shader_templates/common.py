@@ -14,7 +14,7 @@ CONSTANTS = {
     "_SCENE_BOX_SIZE": ('vec3', (10.0, 5.0, 10.0)),
     "_RAYCAST_MAX_STEPS": ('int', 100),
     "_RAYCAST_CONSERVATIVE_STEPPING_RATE": ('float', 1.0),
-    "_ADD_FLOOR_PLANE": ('bool', True),
+    "_ADD_FLOOR_PLANE": ('bool', False),
     "_SHADOW_MAX_STEPS": ('int', 64),
     "_NORMAL_STEPS": ('int', 4),
     "_AO_STEPS": ('int', 5),
@@ -32,16 +32,16 @@ UNIFORMS = {
         'type': 'float', "init_value": 0.0,
         "min": [-np.pi], "max": [np.pi]},
     "cameraOrigin": {
-        'type': 'vec3', "init_value": [0, 0.5, 0],
+        'type': 'vec3', "init_value": [0, -1.0, 0],
         "min": [-10, -10, -10], "max": [10, 10, 10]},
     "cameraDistance": {
-        'type': 'float', "init_value": 5.0,
+        'type': 'float', "init_value": 3.0,
         "min": [0.0], "max": [10.0]},
     "cameraAngleX": {
         'type': 'float', "init_value": np.pi/4,
         "min": [-np.pi], "max": [np.pi]},
     "cameraAngleY": {
-        'type': 'float', "init_value": np.pi/8,
+        'type': 'float', "init_value": np.pi/4,
         "min": [-np.pi], "max": [np.pi]},
     "resolution": {
         'type': 'vec2', "init_value": [512, 512],

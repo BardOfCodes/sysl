@@ -305,6 +305,192 @@ def _format_label(uniform_name):
     # Capitalize first letter of each word
     return name.title()
 
+def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader",
+    template_name='multibuffer_shader_v2.html.j2', output_file=None,
+    mouse_control=True, resolution_via_scale=True, show_controls=True, 
+    backend='twgl', layout_horizontal=False, allow_overflow=False,
+    allow_singular_ubo_edit=False, enable_ubo_animation=False):
+    """
+    Create HTML for multi-buffer shader rendering.
+    
+    Args:
+        shader_definitions (list): List of shader pass definitions, each containing:
+            - shader_code: Fragment shader code
+            - uniforms: Pass-specific uniforms dictionary
+            - textures: Pass-specific textures dictionary
+            - input_FBOs: List of dicts with FBO specs: {'name': str, 'width': int, 'height': int, 'type': 'float'/'vec2'/'vec3'/'vec4'}
+            - output_FBO: Dict with FBO spec: {'name': str, 'width': int, 'height': int, 'type': 'float'/'vec2'/'vec3'/'vec4'}
+                         OR string 'image' for final canvas output
+        title (str): Title for the shader
+        template_name (str): Name of the Jinja template file
+        output_file (str): Output HTML file path (optional)
+        mouse_control (bool): Enable mouse-controlled camera
+        resolution_via_scale (bool): Enable resolution scaling
+        show_controls (bool): Show shader control sliders
+        backend (str): Rendering backend (only 'twgl' supported for multi-buffer)
+        layout_horizontal (bool): Use horizontal layout (canvas left, controls right)
+        allow_overflow (bool): Allow controls to expand parent div (vs scroll within)
+        allow_singular_ubo_edit (bool): Show UBO editing controls for individual variables
+        enable_ubo_animation (bool): Enable UBO animation controls
+        
+    FBO type mapping:
+        - 'float': R32F (1 channel, 32-bit float)
+        - 'vec2': RG32F (2 channels, 32-bit float)
+        - 'vec3': RGB32F (3 channels, 32-bit float)
+        - 'vec4': RGBA32F (4 channels, 32-bit float)
+    """
+    if backend != 'twgl':
+        raise ValueError("Multi-buffer mode only supports 'twgl' backend")
+    
+    # Process shader definitions for multi-buffer rendering
+    passes = []
+    fbo_specs = {}  # Map of FBO name to specification
+    
+    for i, shader_def in enumerate(shader_definitions):
+        # Process input FBOs
+        input_names = []
+        for input_fbo in shader_def.get('input_FBOs', []):
+            if isinstance(input_fbo, dict):
+                fbo_name = input_fbo['name']
+                input_names.append(fbo_name)
+                # Store FBO spec if not already defined
+                if fbo_name not in fbo_specs:
+                    fbo_specs[fbo_name] = input_fbo
+            else:
+                # Backwards compatibility: string name defaults to vec4
+                input_names.append(input_fbo)
+                if input_fbo not in fbo_specs:
+                    fbo_specs[input_fbo] = {'name': input_fbo, 'width': 512, 'height': 512, 'type': 'vec4'}
+        
+        # Process output FBO
+        output_fbo = shader_def['output_FBO']
+        if isinstance(output_fbo, dict):
+            output_name = output_fbo['name']
+            if output_name != 'image' and output_name not in fbo_specs:
+                fbo_specs[output_name] = output_fbo
+        elif output_fbo == 'image':
+            output_name = 'image'
+        else:
+            # Backwards compatibility: string name defaults to vec4
+            output_name = output_fbo
+            if output_fbo != 'image' and output_fbo not in fbo_specs:
+                fbo_specs[output_fbo] = {'name': output_fbo, 'width': 512, 'height': 512, 'type': 'vec4'}
+        
+        # Get uniforms from shader definition
+        shader_uniforms = shader_def.get('uniforms', {})
+        
+        # Use shader uniforms as-is (no automatic additions)
+        # The multi-buffer system will handle time, frame, and resolution separately
+        merged_uniforms = shader_uniforms
+        
+        pass_data = {
+            'index': i,
+            'shader_code': shader_def['shader_code'],
+            'uniforms': convert_sysl_uniforms_to_json(merged_uniforms),
+            'raw_uniforms': merged_uniforms,  # Keep raw uniforms for template
+            'textures': shader_def.get('textures', {}),
+            'input_FBOs': input_names,
+            'output_FBO': output_name
+        }
+        passes.append(pass_data)
+    
+    # Check for self-referencing FBOs (need ping-pong buffering)
+    self_referencing_fbos = []
+    for pass_data in passes:
+        if pass_data['output_FBO'] in pass_data['input_FBOs']:
+            self_referencing_fbos.append(pass_data['output_FBO'])
+    
+    # Collect textures from all passes
+    all_textures = {}
+    for pass_data in passes:
+        pass_textures = pass_data.get('textures', {})
+        for tex_name, tex_data in pass_textures.items():
+            if tex_name not in all_textures:
+                all_textures[tex_name] = tex_data
+    
+    # Check if we have any textures to load
+    has_textures = len(all_textures) > 0
+    
+    # Setup Jinja environment
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    template_dir = os.path.join(script_dir, 'templates')
+    env = Environment(loader=FileSystemLoader(template_dir))
+    template = env.get_template(template_name)
+    
+    # Collect all uniforms from all passes
+    all_uniforms_raw = []
+    uniform_names_seen = set()
+    for pass_data in passes:
+        for uniform in pass_data['uniforms']:
+            if uniform['name'] not in uniform_names_seen:
+                all_uniforms_raw.append(uniform)
+                uniform_names_seen.add(uniform['name'])
+    
+    # Process uniforms for UI controls (same logic as single-pass version)
+    ctrl_uniforms = []
+    
+    for uniform in all_uniforms_raw:
+        uniform_name = uniform.get('name')
+        
+        # Exclude time and frame - these are managed by the rendering system
+        if uniform_name in ['time', 'frame']:
+            continue
+        # Exclude camera controls from UI if mouse control is enabled
+        elif mouse_control and uniform_name in ['cameraAngleX', 'cameraAngleY', 'cameraDistance', 'cameraOrigin']:
+            continue
+        # Exclude resolution control from UI if resolution_via_scale is enabled
+        elif resolution_via_scale and uniform_name == 'resolution':
+            continue
+        else:
+            # Include in UI controls
+            ctrl_uniforms.append(uniform)
+    
+    # Prepare underlying_uniforms (all uniforms for shader initialization)
+    underlying_uniforms = all_uniforms_raw.copy()
+    
+    # Add time as a hidden uniform (not in UI controls)
+    time_uniform = {
+        "type": "float",
+        "name": "time",
+        "label": "Time",
+        "min": 0.0,
+        "max": 1000.0,
+        "step": 0.01,
+        "set_name": "Hidden",
+        "default": 0.0
+    }
+    underlying_uniforms.append(time_uniform)
+    
+    # Render template
+    html_content = template.render(
+        title=title,
+        passes=passes,
+        fbo_specs=fbo_specs,
+        self_referencing_fbos=self_referencing_fbos,
+        uniforms=ctrl_uniforms,  # For controls.html.j2 (UI controls only)
+        underlying_uniforms=underlying_uniforms,  # For common_script.js.html.j2 to initialize uniformValues
+        resolution_via_scale=resolution_via_scale,
+        show_controls=show_controls,
+        backend=backend,
+        mouse_control=mouse_control,
+        layout_horizontal=layout_horizontal,
+        allow_overflow=allow_overflow,
+        allow_singular_ubo_edit=allow_singular_ubo_edit,
+        enable_ubo_animation=enable_ubo_animation,
+        ubo_uniforms={},  # Multi-buffer doesn't support UBOs yet
+        ubo_variable_info={},
+        frag_str="",  # Multi-buffer doesn't have a single shader
+        load_textures=has_textures,  # Load textures if any passes use them
+        textures=all_textures  # Merged textures from all passes
+    )
+    
+    # Write to file if specified
+    if output_file:
+        with open(output_file, 'w') as f:
+            f.write(html_content)
+    
+    return html_content
+
 def make_jupyter_compatible_html(html_code):
     """
     Make the HTML code compatible with Jupyter notebooks.

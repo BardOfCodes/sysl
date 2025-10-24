@@ -1,5 +1,57 @@
 # SySL: Symbolic Scene Language
 
+## Oct 18: 
+What should SYSL contain?
+
+GeoLIPI is about all things just plain geometry based. 
+    Contains the symbolic defs and the python implementation. 
+
+SySL 
+* Contains the code to map these expressions to Shader code templates -> Making it feasible to create "Scene Expressions"
+* Introduces Material Expressions that can be used to specify materials for different parts. 
+    Scene 
+
+* Contains code wrappers to render the scene expressions
+
+
+# Applications: 
+
+1. Render your implicits without going to meshes for paper ready quality renders. 
+2. Check SDF field more easily by slicing the expression online with planes. 
+3. Render target Voxels with grid lines cleanly. 
+4. Create dynamic scenes for the web simply. 
+5. Record optimization and replay. 
+
+## TODO
+
+1. OBB SDF and RGBMR. 
+2. OBB 2D Texture Lookup. 
+3. Custom SDF function, material function.
+4. New shader to have two passes. 
+2. New Shader - material based on local position.
+3. Split Shader -> Find point + index, and only run the material function in the end. 
+4. 
+
+## TODO Oct 15
+
+1. Add the SDF Viewer with AABB and OBB
+
+2. Add Custom SDF function. 
+
+3. Add time uniform variable. 
+2. Add a few more important Shader Viewer (edge, transparent Material)
+    3. Good Shading with proper light transport (Denoise later)
+    4. NPR rendering. 
+    5. BG viewer? 
+
+3. Create Some compelling Examples. 
+
+4. Add Readme with Gifs. 
+
+5. Make the
+
+
+
 ## TODO:
 
 
@@ -21,7 +73,7 @@
 A Python library for constructing Implicit Scenes with Symbolic Expressions, featuring [TBD] ray-traced rendering and real-time visualization capabilities. 
 
 1. Use [Geolipi]() to describe the 3D Shape. 
-2. Use **SySL** to add materials to 3D shapes.
+2. Use **SySL** to add materials to 3D shapes / general Shader for visuals.
 3. Use **SySL** to generate shader code and visualize the output.
 
 ## Features

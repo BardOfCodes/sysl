@@ -13,6 +13,11 @@ MATERIAL_EXPR_PROPS = {
     "in_args": "vec3 pos_0, vec3 n_0",
     "out_type": "Material",
 }
+MATERIAL_EXPR_PROPS_V4 = {
+    "in_args": "vec3 pos_0",
+    "out_type": "Material",
+}
+
 
 mat_master_template = Template("""
 Material SCENE_MATERIAL(in vec3 p, in vec3 n, in float y)
@@ -45,7 +50,6 @@ class LocalShaderContext(ShaderModule):
         self.res_sdf_stack: List[Tuple[str, str]] = []
         self.res_sdf_count = 0
         self.tracked_variables = []
-
     def emit_code(self):
         # Convert into a function from the codebook.
         assert 'out_type' in self.scene_expr_props, "Expected out_type in the codebook - resolve_code must be called first"
@@ -90,7 +94,7 @@ class LocalShaderContext(ShaderModule):
 
     def resolve_code(self):
         res_type, recent_res = self.res_sdf_stack.pop()
-        assert res_type in ["vec2", "vec4", "float", "Material"], "Expected vec2, vec4 or float in the codebook"
+        assert res_type in ["vec2", "vec4", "float", "Material", "MATPoint"], "Expected vec2, vec4 or float in the codebook"
         assert len(self.res_sdf_stack) == 0, "Expected no sdf in the codebook"
         self.scene_expr_props['out_type'] = res_type
         self.add_codeline(f"return {recent_res};")

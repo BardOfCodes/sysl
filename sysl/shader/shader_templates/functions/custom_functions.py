@@ -198,3 +198,72 @@ class EncodedRGBGrid3D(EncodedSDFGrid3D):
 
 
 SMMap["EncodedRGBGrid3D"] = EncodedRGBGrid3D
+
+
+AABBEncodedSDFGrid3DTemplate = Template("""
+float ${func_name}( vec3 p )
+{
+  vec3 local_p = p - ${bbox_origin};
+  float box_sdf = Box3D(local_p, ${bbox_scale});
+  if (box_sdf < ${bound_threshold}) {
+    // Scale by the required scale on each axis.
+    local_p = local_p / ${bbox_scale};
+    // p is in -1 to 1. Convert to 0 1
+    local_p = (local_p + 1.0) / 2.0;
+    local_p = local_p.zyx;
+    float sdf = texture(${texture_name}, local_p).r;
+    return sdf;
+  }else{
+    return box_sdf;
+  }
+}""")
+
+class AABBEncodedSDFGrid3D(CustomFunctionShaderModule):
+    def __init__(self, name=None,template=None, *args, **kwargs):
+        if template is None:
+            template = AABBEncodedSDFGrid3DTemplate
+        if name is None:
+            name = "AABBEncodedSDFGrid3D"
+
+        super().__init__(name, template, *args, **kwargs)
+        self.dependencies = ["Box3D",]
+        self.bound_thresholds = []
+        self.sdf_texture_names = []
+        self.bbox_origins = []
+        self.bbox_scales = []
+    def register_hit(self, *args, **kwargs):
+        sdf_texture_name = kwargs.get("sdf_texture_name", None)
+        assert sdf_texture_name is not None, "Texture name is required"
+        function_name = kwargs.get("function_name", None)
+        assert function_name is not None, "Function name is required"
+        bound_threshold = kwargs.get("bound_threshold", None)
+        assert bound_threshold is not None, "Bound threshold is required"
+        bbox_origin = kwargs.get("bbox_origin", None)
+        assert bbox_origin is not None, "Bbox origin is required"
+        bbox_scale = kwargs.get("bbox_scale", None)
+        assert bbox_scale is not None, "Bbox scale is required"
+        self.vardeps.append(sdf_texture_name)
+        self.function_names.add(function_name)
+        self.bound_thresholds.append(bound_threshold)
+        self.sdf_texture_names.append(sdf_texture_name)
+        self.bbox_origins.append(bbox_origin)
+        self.bbox_scales.append(bbox_scale)
+        self.hit_count += 1
+
+    def generate_code(self):
+        code_parts = []
+        for ind, function_name in enumerate(self.function_names):
+            code = self.template.substitute(texture_name=self.sdf_texture_names[ind], func_name=function_name, 
+                                            bound_threshold=self.bound_thresholds[ind], 
+                                            bbox_origin=self.bbox_origins[ind], 
+                                            bbox_scale=self.bbox_scales[ind])
+            code_parts.append(code)
+        self.code = "\n".join(code_parts)
+
+    def emit_code(self):
+        if self.code is None:
+            self.generate_code()
+        return self.code
+
+
+SMMap["AABBEncodedSDFGrid3D"] = AABBEncodedSDFGrid3D

@@ -33,6 +33,39 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 }
 """)
 
+GLSL_SDF_TRACE_TEMPLATE = Template("""#version 300 es
+#ifdef GL_ES
+precision highp float;
+precision highp sampler2D;
+precision highp sampler3D;
+#endif
+out vec4 fragColor;  // Define the output color variable (only .r will be stored in R32F FBO)
+
+${INNER_CODE}
+
+void main(void)
+{
+  ${LOAD_PARAMS_CALL}
+  main_sdf_trace(fragColor, gl_FragCoord.xy);
+}""")
+
+GLSL_POST_SDF_TRACE_TEMPLATE = Template("""#version 300 es
+#ifdef GL_ES
+precision highp float;
+precision highp sampler2D;
+precision highp sampler3D;
+#endif
+out vec4 fragColor;  // Define the output color variable
+uniform sampler2D distance_travelled;
+
+${INNER_CODE}
+
+void main(void)
+{
+  ${LOAD_PARAMS_CALL}
+  mainImage_post_trace(fragColor, gl_FragCoord.xy);
+}""")
+
 
 class GlobalShaderContext:
     def __init__(self):
@@ -50,6 +83,7 @@ class GlobalShaderContext:
         self.var_map_base = {}
         self.set_to_ubo = False
         self.ubo_data = None
+        self.prim_count = 0
 
     def add_texture(self, texture_data):
         # pack the texture data. 
@@ -195,7 +229,7 @@ class GlobalShaderContext:
             if len(shape) == 2:
                 code_lines.append(f"uniform sampler2D {var_name};")
             elif len(shape) == 3:
-                code_lines.append(f"uniform sampler3D {var_name};")
+                code_lines.append(f"uniform sampler2D {var_name};")
             elif len(shape) == 4:
                 code_lines.append(f"uniform sampler3D {var_name};")
             else:
@@ -273,7 +307,7 @@ class GlobalShaderContext:
         # Save certain information - 
         self.local_sc = self.codebook_stack.pop()
 
-    def emit_shader_code(self, settings) -> str:
+    def emit_shader_code(self, settings, version="default") -> str:
         """Emit complete shader code including constants, uniforms, and modules."""
         # First resolve all dependencies
         self.resolve_dependencies()
@@ -320,15 +354,22 @@ class GlobalShaderContext:
                 code_blocks.append("")  # Empty line for separation
         inner_code = "\n".join(code_blocks)
 
-
-        if settings.get("target", "GLSL") == "GLSL":
-            real_code = GLSL_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALL=load_params_call)
-        elif settings.get("target", "GLSL") == "ShaderToy":
-            #  rename MainImage.
-            inner_code = inner_code.replace("void mainImage", "void mainImage_ST")
-            real_code = ShaderToy_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALL=load_params_call)
+        if version == "default":
+            if settings.get("target", "GLSL") == "GLSL":
+                real_code = GLSL_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALL=load_params_call)
+            elif settings.get("target", "GLSL") == "ShaderToy":
+                #  rename MainImage.
+                inner_code = inner_code.replace("void mainImage", "void mainImage_ST")
+                real_code = ShaderToy_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALL=load_params_call)
+            else:
+                raise ValueError(f"Invalid target: {settings.get('target', 'GLSL')}")
+        elif version == "sdf_trace":
+            real_code = GLSL_SDF_TRACE_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALL=load_params_call)
+        elif version == "post_sdf_trace":
+            real_code = GLSL_POST_SDF_TRACE_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALL=load_params_call)
         else:
-            raise ValueError(f"Invalid target: {settings.get('target', 'GLSL')}")
+            raise ValueError(f"Invalid version: {version}")
+
         return real_code
     def get_uniforms(self):
         """Get uniforms including UBO data if available."""
@@ -357,15 +398,21 @@ class GlobalShaderContext:
     def get_shader_modules(self):
         return self.shader_modules
 
-    def resolve_material_stack(self):
+    def resolve_material_stack(self, version="v3"):
         cases = []
         dependencies = []
         for mat_func_name, mat_index in self.material_registry.items():
             cases.append(f"case {mat_index}: return {mat_func_name}(p, n);")
             # cases.append(f"case {mat_index}: return MatBricks(p, n);")
             dependencies.append(f"{mat_func_name}")
-        dependencies.append("BaseMaterials")
-        dependencies.append("MatPlastic")
+        if version == "v3":
+            dependencies.append("BaseMaterials")
+            dependencies.append("MatPlastic")
+        elif version == "v4":
+            dependencies.append("BaseMaterials_v4")
+            dependencies.append("MatPlastic_v4")
+        else:
+            raise ValueError(f"Invalid version: {version}")
         mat_switch_cases = "\n".join(cases)
         mat_func_code = mat_master_template.substitute(mat_switch_cases=mat_switch_cases)
         def scene_mat_factory():

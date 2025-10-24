@@ -153,21 +153,29 @@ def param_primitive_process(param):
 
     if isinstance(param, str):
         shader_line = f"{param}"
-    else:
+    elif isinstance(param, sp.Tuple):
+        # Denest
         if len(param) == 0:
             if isinstance(param, sp.Integer):
-                param = float(param)
+                param = f"{float(param):.10g}"
             shader_line = f"{param}"
+        else:
+            if isinstance(param[0], sp.Tuple):
+                param = tuple(x for sub in param for x in sub)
         if len(param) == 1:
             if isinstance(param[0], sp.Integer):
-                param = [float(param[0])]
+                param = [f"{float(param[0]):.10g}"]
             shader_line = f"{param[0]}"
         elif len(param) == 2:
-            shader_line = f"vec2({float(param[0])}, {float(param[1])})"
+            shader_line = f"vec2({float(param[0]):.10g}, {float(param[1]):.10g})"
         elif len(param) == 3:
-            shader_line = f"vec3({float(param[0])}, {float(param[1])}, {float(param[2])})"
+            shader_line = f"vec3({float(param[0]):.10g}, {float(param[1]):.10g}, {float(param[2]):.10g})"
         elif len(param) == 4:
-            shader_line = f"vec4({float(param[0])}, {float(param[1])}, {float(param[2])}, {float(param[3])})"
+            shader_line = f"vec4({float(param[0]):.10g}, {float(param[1]):.10g}, {float(param[2]):.10g}, {float(param[3]):.10g})"
+        elif len(param) == 16:
+            shader_line = f"mat4({float(param[0]):.10g}, {float(param[1]):.10g}, {float(param[2]):.10g}, {float(param[3]):.10g}, {float(param[4]):.10g}, {float(param[5]):.10g}, {float(param[6]):.10g}, {float(param[7]):.10g}, {float(param[8]):.10g}, {float(param[9]):.10g}, {float(param[10]):.10g}, {float(param[11]):.10g}, {float(param[12]):.10g}, {float(param[13]):.10g}, {float(param[14]):.10g}, {float(param[15]):.10g})"
         else:
             raise NotImplementedError
+    else:
+        raise NotImplementedError
     return shader_line

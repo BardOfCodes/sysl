@@ -10,8 +10,12 @@ from string import Template
 # Template for 2-argument functions
 BASE_TEMPLATE = Template("""
 ${type} ${func_name}( ${type} d1, ${type} d2 )
-{
-	return (${condition}) ? d1 : d2;
+{  
+    if (${condition}) {
+        return d1;
+    } else {
+        return d2;
+    }
 }
 """)
 
@@ -27,17 +31,20 @@ ${type} ${func_name}(${args})
 OPERATIONS = {
     "Union": {
         "float": "d1<d2",
-        "vec": "d1.x<d2.x"
+        "vec": "d1.x<d2.x",
+        "MATPoint": "d1.x<d2.x"
     },
     "Intersection": {
         "float": "d1>d2", 
-        "vec": "d1.x>d2.x"
+        "vec": "d1.x>d2.x",
+        "MATPoint": "d1.x>d2.x"
     }
 }
 
 # Supported types
 VECTOR_TYPES = ["vec2", "vec3", "vec4"]
-ALL_TYPES = ["float"] + VECTOR_TYPES
+MAT_TYPE = ["MATPoint"]
+ALL_TYPES = ["float"] + VECTOR_TYPES + MAT_TYPE
 
 # DIFFERENCE TEMPLATES
 FLOAT_DIFF_CODE = """
@@ -64,6 +71,7 @@ DIFF_ARITY_MAP = {
     ("vec2", 2): NARY_DIFF_CODE.substitute(type="vec2"),
     ("vec3", 2): NARY_DIFF_CODE.substitute(type="vec3"),
     ("vec4", 2): NARY_DIFF_CODE.substitute(type="vec4"),
+    ("MATPoint", 2): NARY_DIFF_CODE.substitute(type="MATPoint"),
 }
 
 # SWITCHED DIFFERENCE TEMPLATES
@@ -91,6 +99,7 @@ SWITCHED_DIFF_ARITY_MAP = {
     ("vec2", 2): NARY_SWITCHED_DIFF_CODE.substitute(type="vec2"),
     ("vec3", 2): NARY_SWITCHED_DIFF_CODE.substitute(type="vec3"),
     ("vec4", 2): NARY_SWITCHED_DIFF_CODE.substitute(type="vec4"),
+    ("MATPoint", 2): NARY_SWITCHED_DIFF_CODE.substitute(type="MATPoint"),
 }
 
 # COMPLEMENT TEMPLATES
@@ -106,6 +115,7 @@ COMPLEMENT_ARITY_MAP = {
     ("vec2", 1): COMPLEMENT_CODE.substitute(type="vec2"),
     ("vec3", 1): COMPLEMENT_CODE.substitute(type="vec3"),
     ("vec4", 1): COMPLEMENT_CODE.substitute(type="vec4"),
+    ("MATPoint", 1): COMPLEMENT_CODE.substitute(type="MATPoint"),
 }
 
 # SMOOTH UNION TEMPLATES
@@ -125,11 +135,27 @@ ${type} SmoothUnion( ${type} res1, ${type} res2, float k )
 }
 """)
 
+SMOOTH_UNION_MATPOINT_CODE = Template("""
+${type} SmoothUnion( ${type} res1, ${type} res2, float k )
+{
+    float h = clamp( 0.5 + 0.5*(res2.x - res1.x)/k, 0.0, 1.0 );
+    // mix res, albedo, emissive, mrc
+    float t = k*h*(1.0-h);
+    ${type} out_res;
+    out_res.x = mix( res2.x, res1.x, h ) - t;
+    out_res.mat.albedo = mix( res2.mat.albedo, res1.mat.albedo, h );
+    out_res.mat.emissive = mix( res2.mat.emissive, res1.mat.emissive, h );
+    out_res.mat.mrc = mix( res2.mat.mrc, res1.mat.mrc, h );
+    return out_res;
+}
+""")
+
 SMOOTH_UNION_ARITY_MAP = {
     ("float", 2): SMOOTH_UNION_FLOAT_CODE,
     ("vec2", 2): SMOOTH_UNION_VEC_CODE.substitute(type="vec2"),
     ("vec3", 2): SMOOTH_UNION_VEC_CODE.substitute(type="vec3"),
     ("vec4", 2): SMOOTH_UNION_VEC_CODE.substitute(type="vec4"),
+    ("MATPoint", 2): SMOOTH_UNION_MATPOINT_CODE.substitute(type="MATPoint"),
 }
 
 # GEOM ONLY SMOOTH UNION TEMPLATES
@@ -158,11 +184,14 @@ ${type} GeomOnlySmoothUnion( ${type} res1, ${type} res2, float k )
 }
 """)
 
+
+
 GEOM_ONLY_SMOOTH_UNION_ARITY_MAP = {
     ("float", 2): GEOM_ONLY_SMOOTH_UNION_FLOAT_CODE,
     ("vec2", 2): GEOM_ONLY_SMOOTH_UNION_VEC_CODE.substitute(type="vec2"),
     ("vec3", 2): GEOM_ONLY_SMOOTH_UNION_VEC_CODE.substitute(type="vec3"),
     ("vec4", 2): GEOM_ONLY_SMOOTH_UNION_VEC_CODE.substitute(type="vec4"),
+    ("MATPoint", 2): GEOM_ONLY_SMOOTH_UNION_VEC_CODE.substitute(type="MATPoint"),
 }
 
 # SMOOTH INTERSECTION TEMPLATES
@@ -182,11 +211,27 @@ ${type} SmoothIntersection( ${type} res1, ${type} res2, float k )
 }
 """)
 
+
+SMOOTH_INTERSECTION_MATPOINT_CODE = Template("""
+${type} SmoothIntersection( ${type} res1, ${type} res2, float k )
+{   
+    float h = clamp( 0.5 - 0.5*(res2.x-res1.x)/k, 0.0, 1.0 );
+    float t = k*h*(1.0-h);
+    ${type} out_res;
+    out_res.x = mix( res2.x, res1.x, h ) + t;
+    out_res.mat.albedo = mix( res2.mat.albedo, res1.mat.albedo, h );
+    out_res.mat.emissive = mix( res2.mat.emissive, res1.mat.emissive, h );
+    out_res.mat.mrc = mix( res2.mat.mrc, res1.mat.mrc, h );
+    return out_res;
+}
+""")
+
 SMOOTH_INTERSECTION_ARITY_MAP = {
     ("float", 2): SMOOTH_INTERSECTION_FLOAT_CODE,
     ("vec2", 2): SMOOTH_INTERSECTION_VEC_CODE.substitute(type="vec2"),
     ("vec3", 2): SMOOTH_INTERSECTION_VEC_CODE.substitute(type="vec3"),
     ("vec4", 2): SMOOTH_INTERSECTION_VEC_CODE.substitute(type="vec4"),
+    ("MATPoint", 2): SMOOTH_INTERSECTION_MATPOINT_CODE.substitute(type="MATPoint"),
 }
 
 # SMOOTH DIFFERENCE TEMPLATES
@@ -207,11 +252,26 @@ ${type} SmoothDifference( ${type} res1, ${type} res2, float k )
 }
 """)
 
+SMOOTH_DIFFERENCE_MATPOINT_CODE = Template("""
+${type} SmoothDifference( ${type} res1, ${type} res2, float k )
+{
+    float h = clamp( 0.5 - 0.5*(res2.x+res1.x)/k, 0.0, 1.0 );
+    float t = k*h*(1.0-h);
+    ${type} out_res;
+    out_res.x = mix( res1, -res2, h ) + t;
+    out_res.mat.albedo = mix( res1.mat.albedo, res2.mat.albedo, h );
+    out_res.mat.emissive = mix( res1.mat.emissive, res2.mat.emissive, h );
+    out_res.mat.mrc = mix( res1.mat.mrc, res2.mat.mrc, h );
+    return out_res;
+}
+""")
+
 SMOOTH_DIFFERENCE_ARITY_MAP = {
     ("float", 2): SMOOTH_DIFFERENCE_FLOAT_CODE,
     ("vec2", 2): SMOOTH_DIFFERENCE_VEC_CODE.substitute(type="vec2"),
     ("vec3", 2): SMOOTH_DIFFERENCE_VEC_CODE.substitute(type="vec3"),
     ("vec4", 2): SMOOTH_DIFFERENCE_VEC_CODE.substitute(type="vec4"),
+    ("MATPoint", 2): SMOOTH_DIFFERENCE_VEC_CODE.substitute(type="MATPoint"),
 }
 
 # DILATE TEMPLATES
@@ -235,6 +295,7 @@ DILATE_ARITY_MAP = {
     ("vec2", 1): DILATE_VEC_CODE.substitute(type="vec2"),
     ("vec3", 1): DILATE_VEC_CODE.substitute(type="vec3"),
     ("vec4", 1): DILATE_VEC_CODE.substitute(type="vec4"),
+    ("MATPoint", 1): DILATE_VEC_CODE.substitute(type="MATPoint"),
 }
 
 # ERODE TEMPLATES
@@ -258,6 +319,7 @@ ERODE_ARITY_MAP = {
     ("vec2", 1): ERODE_VEC_CODE.substitute(type="vec2"),
     ("vec3", 1): ERODE_VEC_CODE.substitute(type="vec3"),
     ("vec4", 1): ERODE_VEC_CODE.substitute(type="vec4"),
+    ("MATPoint", 1): ERODE_VEC_CODE.substitute(type="MATPoint"),
 }
 
 # ONION TEMPLATES
@@ -281,6 +343,7 @@ ONION_ARITY_MAP = {
     ("vec2", 1): ONION_VEC_CODE.substitute(type="vec2"),
     ("vec3", 1): ONION_VEC_CODE.substitute(type="vec3"),
     ("vec4", 1): ONION_VEC_CODE.substitute(type="vec4"),
+    ("MATPoint", 1): ONION_VEC_CODE.substitute(type="MATPoint"),
 }
 
 # NEG ONLY ONION TEMPLATES
@@ -309,4 +372,5 @@ NEG_ONLY_ONION_ARITY_MAP = {
     ("vec2", 1): NEG_ONLY_ONION_VEC_CODE.substitute(type="vec2"),
     ("vec3", 1): NEG_ONLY_ONION_VEC_CODE.substitute(type="vec3"),
     ("vec4", 1): NEG_ONLY_ONION_VEC_CODE.substitute(type="vec4"),
+    ("MATPoint", 1): NEG_ONLY_ONION_VEC_CODE.substitute(type="MATPoint"),
 }

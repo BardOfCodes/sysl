@@ -1,6 +1,7 @@
-"""
-This is derived from shadertoy code at: https://www.shadertoy.com/view/Xds3zN
-Original Author: Inigo Quilez
+
+credits = """
+// This is derived from shadertoy code at: https://www.shadertoy.com/view/Xds3zN
+// Original Author: Inigo Quilez
 """
 
 from ..shader_module import register_shader_module
