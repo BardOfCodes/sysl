@@ -143,7 +143,7 @@ vec2 raycast(in vec3 ro, in vec3 rd) {
         float t = tmin;
         for (int i = _ZERO; i < _RAYCAST_MAX_STEPS && t < tmax; i++) {
             vec2 h = SCENE_EXPRESSION(ro + rd * t);
-            if (abs(h.x) < 0.0001 * t) {
+            if (abs(h.x) < 0.0001) {
                 res = vec2(t, h.y);
                 break;
             }

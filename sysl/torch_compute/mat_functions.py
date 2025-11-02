@@ -14,7 +14,12 @@ def material_v4(points, albedo, emissive, mrc):
     materials = materials.repeat(points.shape[0], 1)
     return materials
 
-
+def smpl_material_v4(points, albedo, mr):
+    # ADD here. 
+    materials = th.cat([albedo, mr], dim=-1).unsqueeze(0)
+    # repeat over the points
+    materials = materials.repeat(points.shape[0], 1)
+    return materials
 
 def non_emissive_material_v3(points, albedo, roughness, clearcoat, metallic):
     # ADD here. 

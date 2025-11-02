@@ -16,7 +16,6 @@ void main(void)
 {
     // Convert from gl_FragCoord to UVs
     vec2 uv = gl_FragCoord.xy / resolution;
-
     vec4 base_color = texture(intermediate_image, uv);
     fragColor = base_color;
 }

@@ -309,7 +309,8 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
     template_name='multibuffer_shader_v2.html.j2', output_file=None,
     mouse_control=True, resolution_via_scale=True, show_controls=True, 
     backend='twgl', layout_horizontal=False, allow_overflow=False,
-    allow_singular_ubo_edit=False, enable_ubo_animation=False):
+    allow_singular_ubo_edit=False, enable_ubo_animation=False, show_primitive_tracking=False,
+    primitive_editing_mode=False, auxiliary=None):
     """
     Create HTML for multi-buffer shader rendering.
     
@@ -332,6 +333,13 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
         allow_overflow (bool): Allow controls to expand parent div (vs scroll within)
         allow_singular_ubo_edit (bool): Show UBO editing controls for individual variables
         enable_ubo_animation (bool): Enable UBO animation controls
+        show_primitive_tracking (bool): Show primitive tracking UI controls (tracking is always enabled)
+        primitive_editing_mode (bool): Enable primitive editing with uniform manipulation
+        auxiliary (dict): Auxiliary data for primitive editing:
+            - var_map: Dict mapping variable names to values
+            - primitive_map: Dict mapping primitive IDs to list of variable names
+            - uniforms: Dict of editing uniforms (translate, axis_angle, etc.)
+            - uniform_map: Dict mapping list index to uniform name (e.g., {0: 'size', 1: 'round_dilate_taper_bend'})
         
     FBO type mapping:
         - 'float': R32F (1 channel, 32-bit float)
@@ -461,6 +469,20 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
     }
     underlying_uniforms.append(time_uniform)
     
+    # Collect UBO uniforms from all passes
+    all_ubo_uniforms = {}
+    for pass_data in passes:
+        raw_uniforms = pass_data.get('raw_uniforms', {})
+        for name, data in raw_uniforms.items():
+            if data.get('type') == 'uniform_buffer':
+                if name not in all_ubo_uniforms:
+                    all_ubo_uniforms[name] = data
+    
+    # Get variable info for UBO editing controls
+    all_ubo_variable_info = {}
+    for ubo_name, ubo_data in all_ubo_uniforms.items():
+        all_ubo_variable_info[ubo_name] = get_variable_info_for_editing(ubo_data)
+    
     # Render template
     html_content = template.render(
         title=title,
@@ -477,8 +499,11 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
         allow_overflow=allow_overflow,
         allow_singular_ubo_edit=allow_singular_ubo_edit,
         enable_ubo_animation=enable_ubo_animation,
-        ubo_uniforms={},  # Multi-buffer doesn't support UBOs yet
-        ubo_variable_info={},
+        show_primitive_tracking=show_primitive_tracking,
+        primitive_editing_mode=primitive_editing_mode,
+        auxiliary=auxiliary or {},
+        ubo_uniforms=all_ubo_uniforms,
+        ubo_variable_info=all_ubo_variable_info,
         frag_str="",  # Multi-buffer doesn't have a single shader
         load_textures=has_textures,  # Load textures if any passes use them
         textures=all_textures  # Merged textures from all passes

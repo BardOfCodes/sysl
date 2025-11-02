@@ -39,6 +39,23 @@ Material MaterialV4(vec3 albedo, vec3 emissive, vec3 mrc)
 }
 """)
 
+SMPLMaterialV4 = register_shader_module("""
+@name SMPLMaterialV4
+@inputs albedo, emissive, mrc
+@outputs mat
+@dependencies BaseMaterials_v4
+@vardeps 
+Material SMPLMaterialV4(vec3 albedo, vec2 mr)
+{   
+    Material mat;
+    mat.albedo = albedo;
+    mat.emissive = vec3(0.0);
+    mat.mrc.z = 0.0;
+    mat.mrc.xy = mr;
+    return mat;
+}
+""")
+
 background_v4 = register_shader_module("""
 @name background_v4
 @inputs r, sun
@@ -239,7 +256,7 @@ MATPoint SphereTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
         float t = tmin;
         for (int i = _ZERO; i < _RAYCAST_MAX_STEPS && t < tmax; i++) {
             MATPoint h = SCENE_EXPRESSION(ro + rd * t);
-            if (abs(h.x) < 0.0001 * t) {
+            if (abs(h.x) < 0.0001) {
                 res.x = t;
                 res.mat = h.mat;
                 _h = true;

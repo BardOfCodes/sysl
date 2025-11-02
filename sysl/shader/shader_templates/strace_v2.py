@@ -68,7 +68,7 @@ vec4 raycast(in vec3 ro, in vec3 rd) {
         float t = tmin;
         for (int i = _ZERO; i < _RAYCAST_MAX_STEPS && t < tmax; i++) {
             vec4 h = SCENE_EXPRESSION(ro + rd * t);
-            if (abs(h.x) < 0.0001 * t) {
+            if (abs(h.x) < 0.0001) {
                 res = vec4(t, h.yzw);
                 break;
             }

@@ -76,3 +76,12 @@ class MaterialV4(Material):
             "mrc": {"type": "Vector[3]"},
         }
     
+
+@register_symbol
+class SMPLMaterialV4(MaterialV4):
+    @classmethod
+    def default_spec(cls):
+        return {
+            "albedo": {"type": "Vector[3]"},
+            "mr": {"type": "Vector[2]"},
+        }

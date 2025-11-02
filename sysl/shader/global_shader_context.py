@@ -7,7 +7,8 @@ from .shader_module import SMMap, ShaderModule
 from .local_shader_context import LocalShaderContext, SCENE_EXPR_PROPS, mat_master_template
 from .shader_templates.common import CONSTANTS, UNIFORMS, PRELIMINARIES
 from .utils.ubo import create_var_map_with_ubo, generate_ubo_glsl_code, generate_inline_glsl_code
-
+from .utils.ubo import create_var_map_with_param_to_texture, generate_param_to_texture_glsl_code
+from .utils.ubo import _get_variable_type_and_value, _to_float
 GLSL_TEMPLATE = Template("""#version 300 es
 #ifdef GL_ES
 precision highp float;
@@ -89,11 +90,43 @@ class GlobalShaderContext:
         # pack the texture data. 
         name = texture_data["name"]
         self.texture_registry[name] = texture_data
-    def create_var_map(self, var_map_base, set_to_ubo=True):
+    def create_var_map(self, var_map_base, set_to_ubo=False, set_param_to_texture=False):
         """Create variable map and delegate UBO processing to UBO module."""
         self.var_map_base = var_map_base
         self.set_to_ubo = set_to_ubo
-        self.var_map, self.ubo_data = create_var_map_with_ubo(var_map_base, set_to_ubo)
+        self.set_param_to_texture = set_param_to_texture
+        if set_to_ubo and set_param_to_texture:
+            raise ValueError("Cannot set both UBO and param to texture")
+        if set_to_ubo:
+            self.var_map, self.ubo_data = create_var_map_with_ubo(var_map_base)
+        if set_param_to_texture:
+            self.var_map, texture_data = create_var_map_with_param_to_texture(var_map_base)
+            self.add_texture(texture_data)
+            self.ubo_data = None
+        else:
+            # Create inline variable map (original behavior)
+            var_map = {}
+            for var_name, param in var_map_base.items():
+
+                var_type, normalized_value = _get_variable_type_and_value(param)
+                
+                # Generate GLSL value string based on type
+                if var_type == "float":
+                    var_value = str(normalized_value)
+                elif var_type == "bool":
+                    var_value = "true" if normalized_value else "false"
+                elif var_type in ["vec2", "vec3", "vec4"]:
+                    components = ", ".join(str(_to_float(x)) for x in normalized_value)
+                    var_value = f"{var_type}({components})"
+                else:
+                    raise NotImplementedError(f"Unsupported variable type: {var_type}")
+                    
+                var_map[var_name] = {"type": var_type, "value": var_value}
+                
+            self.var_map = var_map
+            self.ubo_data = None
+            self.param_texture_data = None
+
 
     def get_textures(self):
         return self.texture_registry
@@ -253,6 +286,8 @@ class GlobalShaderContext:
         if self.set_to_ubo and self.ubo_data:
             # Delegate UBO code generation to UBO module
             return generate_ubo_glsl_code(self.ubo_data, use_define_vars)
+        elif self.set_param_to_texture:
+            return generate_param_to_texture_glsl_code(self.var_map)
         else:
             # Delegate inline code generation to UBO module
             return generate_inline_glsl_code(self.var_map, use_define_vars)
@@ -331,6 +366,13 @@ class GlobalShaderContext:
         if uniforms_code:
             code_blocks.append(uniforms_code)
         
+
+        # Emit textures
+        textures_code = self.emit_textures()
+        if textures_code:
+            code_blocks.append(textures_code)
+        # Emit shader modules in topological order
+
         # varlinking code
         varlinking_declarations, load_params_function = self.emit_varlinking(settings)
         if varlinking_declarations:
@@ -339,12 +381,7 @@ class GlobalShaderContext:
             code_blocks.append(load_params_function)
         else:
             load_params_call = ""
-
-        # Emit textures
-        textures_code = self.emit_textures()
-        if textures_code:
-            code_blocks.append(textures_code)
-        # Emit shader modules in topological order
+            
         for module_name in sorted_modules:
             module = self.shader_modules[module_name]
             code = module.emit_code()

@@ -241,7 +241,7 @@
       <div class="px-3 pb-3 space-y-4">
         <!-- Reset Buttons -->
         <div class="space-y-2 border-t pt-4">
-          <div class="flex gap-2">
+          <div class="flex gap-2 flex-wrap">
             <button
               id="reset-shader"
               class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded font-medium transition-colors"
@@ -260,8 +260,36 @@
             >
               Save Render to PNG
             </button>
+            {% if primitive_editing_mode %}
+            <button
+              id="export-varmap-btn"
+              class="px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded font-medium transition-colors"
+            >
+              Export Var Map
+            </button>
+            {% endif %}
           </div>
         </div>
+        
+        {% if show_primitive_tracking %}
+        <!-- Primitive Selection -->
+        <div class="space-y-2 border-t pt-4">
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center gap-2">
+              <button
+                id="disable-tracking-btn"
+                class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded font-medium transition-colors"
+              >
+                Disable Tracking
+              </button>
+              <div class="text-sm text-gray-700">
+                Selected ID: <span id="selected-primitive-id" class="font-mono text-blue-600">None</span>
+              </div>
+            </div>
+            <div class="text-xs text-gray-600 italic">Click on canvas to select (dragging ignored)</div>
+          </div>
+        </div>
+        {% endif %}
         
       </div>
     </details>

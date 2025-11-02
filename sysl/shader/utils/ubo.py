@@ -303,6 +303,45 @@ def create_ubo_data(var_map_base: VarMapBase) -> Optional[UBODataDict]:
     return _create_ubo_data_dict(ubo_data, var_mapping)
 
 
+def create_param_texture_data(var_map_base: VarMapBase) -> Optional[UBODataDict]:
+    """
+    Create packed UBO data from variable map.
+    
+    Args:
+        var_map_base: Dictionary mapping variable names to their values
+        
+    Returns:
+        Dictionary containing UBO data or None if no variables
+    """
+    # Classify and pack variables
+    classified_vars = classify_variables(var_map_base)
+    vec4_entries, var_mapping = pack_variables_to_vec4s(classified_vars)
+    
+    if not vec4_entries:
+        return None
+    
+    # Create numpy array for compression
+    # Shape: (1, n_vec4s * 4) - 1 for current time step, will be (T, n_vec4s * 4) for animation
+    n_vec4s = len(vec4_entries)
+    data_array = np.zeros((1, n_vec4s, 4), dtype=np.float32)
+    
+    # Fill the array
+    for i, vec4 in enumerate(vec4_entries):
+        start_idx = i
+        data_array[0, start_idx] = vec4
+    
+    # numpy code
+    tex_shape = data_array.shape
+    tex_dtype = str(data_array.dtype)
+    compressed = zlib.compress(data_array.tobytes())
+    b64_data = base64.b64encode(compressed).decode('utf-8')
+    texture_data = {'name': "PARAM_TEX", 
+                    'data_b64': b64_data,
+                    'shape': tex_shape, 
+                    'dtype': tex_dtype,
+                    }
+    return var_mapping, texture_data
+
 def generate_glsl_var_declarations(var_mapping: VarMapping) -> List[str]:
     """
     Generate GLSL variable declarations from var mapping.
@@ -402,11 +441,87 @@ def generate_ubo_glsl_code(ubo_data: Optional[UBODataDict], use_define_vars: boo
         code_lines.extend(var_declarations)
         
         # Generate loadParams function
-        load_statements = generate_glsl_load_statements(var_mapping, ubo_name)
+
+        load_statements = []
+        
+        for var_name, mapping_info in var_mapping.items():
+            vec4_index = mapping_info['vec4_index']
+            components = mapping_info['components']
+            var_type = mapping_info['type']
+            
+            if var_type == 'bool':
+                code_lines.append(f"{var_name} = ({ubo_name}[{vec4_index}].{components} > 0.5)")
+            elif var_type == 'int':
+                code_lines.append(f"{var_name} = int({ubo_name}[{vec4_index}].{components})")
+            else:
+                code_lines.append(f"{var_name} = {ubo_name}[{vec4_index}].{components}")
+                
         load_params_code = "void loadParams() {\n" + "\n".join(load_statements) + "\n}"
     
     ubo_declarations = "\n".join(code_lines)
     return ubo_declarations, load_params_code
+
+def generate_param_to_texture_glsl_code( 
+                    var_mapping: VarMapping,
+                    use_define_vars: bool = False, 
+                    param_name: str = "PARAM_TEX") -> Tuple[str, str]:
+    """
+    Generate complete UBO GLSL code including declarations and load function.
+    
+    Args:
+        ubo_data: UBO data dictionary or None
+        use_define_vars: Whether to use #define directives instead of loadParams
+        ubo_name: Name of the UBO array in GLSL
+        
+    Returns:
+        Tuple of (ubo_declarations, load_params_function)
+    """
+    code_lines = ["// Param to Texture Variables"]
+    
+    if not use_define_vars:
+
+        # Use traditional variable declarations + loadParams function
+        var_declarations = generate_glsl_var_declarations(var_mapping)
+        code_lines.extend(var_declarations)
+        
+        # Generate loadParams function
+
+        load_statements = []
+        
+        for var_name, mapping_info in var_mapping.items():
+            vec4_index = mapping_info['vec4_index']
+            components = mapping_info['components']
+            var_type = mapping_info['type']
+            
+            if var_type == 'bool':
+                load_statements.append(f"{var_name} = (texelFetch({param_name}, ivec2({vec4_index}, 0), 0).{components} > 0.5);")
+            elif var_type == 'int':
+                load_statements.append(f" {var_name} = int(texelFetch({param_name}, ivec2({vec4_index}, 0), 0).{components});")
+            else:
+                load_statements.append(f" {var_name} = texelFetch({param_name}, ivec2({vec4_index}, 0), 0).{components};")
+                
+        load_params_code = "void loadParams() {\n" + "\n".join(load_statements) + "\n}"
+    else:
+        # Use #define directives for direct variable mapping
+        code_lines.append("// Variable definitions using #define")
+        
+        for var_name, mapping_info in var_mapping.items():
+            vec4_index = mapping_info['vec4_index']
+            components = mapping_info['components']
+            var_type = mapping_info['type']
+            
+            # Generate appropriate #define based on variable 
+            #  texelFetch(paramTex, ivec2(i, 0), 0);
+            if var_type == 'bool':
+                code_lines.append(f"#define {var_name} (texelFetch({param_name}, ivec2({vec4_index}, 0), 0).{components} > 0.5)")
+            elif var_type == 'int':
+                code_lines.append(f"#define {var_name} int(texelFetch({param_name}, ivec2({vec4_index}, 0), 0).{components})")
+            else:
+                code_lines.append(f"#define {var_name} texelFetch({param_name}, ivec2({vec4_index}, 0), 0).{components}")
+        
+        load_params_code = "void loadParams() {\n    // Variables initialized via #define directives\n}"
+    param_declarations = "\n".join(code_lines)
+    return param_declarations, load_params_code
 
 
 def generate_inline_glsl_code(var_map: Dict[str, Dict[str, str]], use_define_vars: bool = False) -> Tuple[str, str]:
@@ -446,7 +561,7 @@ def generate_inline_glsl_code(var_map: Dict[str, Dict[str, str]], use_define_var
     return variable_declarations, load_params_code
 
 
-def create_var_map_with_ubo(var_map_base: VarMapBase, set_to_ubo: bool = True) -> Tuple[Dict[str, Dict[str, str]], Optional[UBODataDict]]:
+def create_var_map_with_ubo(var_map_base: VarMapBase) -> Tuple[Dict[str, Dict[str, str]], Optional[UBODataDict]]:
     """
     Create variable map and UBO data in one step.
     
@@ -465,45 +580,57 @@ def create_var_map_with_ubo(var_map_base: VarMapBase, set_to_ubo: bool = True) -
     var_map = {}
     ubo_data = None
     
-    if set_to_ubo:
-        # Create UBO data with efficient packing
-        ubo_data = create_ubo_data(var_map_base)
-        
-        if ubo_data:
-            var_mapping = ubo_data['var_mapping']
-            ubo_name = "UBO_PARAMS"
-            
-            # Create var_map entries that reference UBO
-            for var_name, mapping_info in var_mapping.items():
-                vec4_index = mapping_info['vec4_index']
-                components = mapping_info['components']
-                var_type = mapping_info['type']
-                
-                var_value = f"{ubo_name}[{vec4_index}].{components}"
-                var_map[var_name] = {"type": var_type, "value": var_value}
-        else:
-            # Fallback to inline values if UBO creation fails
-            set_to_ubo = False
+    # Create UBO data with efficient packing
+    ubo_data = create_ubo_data(var_map_base)
     
-    if not set_to_ubo:
-        # Create inline variable map (original behavior)
-        for var_name, param in var_map_base.items():
-            var_type, normalized_value = _get_variable_type_and_value(param)
+    if ubo_data:
+        var_mapping = ubo_data['var_mapping']
+        ubo_name = "UBO_PARAMS"
+        
+        # Create var_map entries that reference UBO
+        for var_name, mapping_info in var_mapping.items():
+            vec4_index = mapping_info['vec4_index']
+            components = mapping_info['components']
+            var_type = mapping_info['type']
             
-            # Generate GLSL value string based on type
-            if var_type == "float":
-                var_value = str(normalized_value)
-            elif var_type == "bool":
-                var_value = "true" if normalized_value else "false"
-            elif var_type in ["vec2", "vec3", "vec4"]:
-                components = ", ".join(str(_to_float(x)) for x in normalized_value)
-                var_value = f"{var_type}({components})"
-            else:
-                raise NotImplementedError(f"Unsupported variable type: {var_type}")
-                
+            var_value = f"{ubo_name}[{vec4_index}].{components}"
             var_map[var_name] = {"type": var_type, "value": var_value}
     
     return var_map, ubo_data
+
+
+def create_var_map_with_param_to_texture(var_map_base: VarMapBase, set_to_) -> Tuple[Dict[str, Dict[str, str]], Optional[UBODataDict]]:
+    """
+    Create variable map and UBO data in one step.
+    
+    Args:
+        var_map_base: Dictionary mapping variable names to their values
+        set_to_ubo: Whether to use UBO or inline values
+        
+    Returns:
+        Tuple of:
+        - Variable map: {var_name: {'type': str, 'value': str}}
+        - UBO data: Dictionary with UBO info or None
+    """
+    if not var_map_base:
+        return {}, None
+    
+    var_map = {}
+    
+    # Create UBO data with efficient packing
+    var_mapping, param_texture_dict = create_param_texture_data(var_map_base)
+    
+    ubo_name = "PARAM_TEX"
+    
+    # Create var_map entries that reference UBO
+    # for var_name, mapping_info in var_mapping.items():
+    #     vec4_index = mapping_info['vec4_index']
+    #     components = mapping_info['components']
+    #     var_type = mapping_info['type']
+    #     # texelFetch(paramTex, ivec2(i, 0), 0);
+    #     var_value = f"texelFetch({ubo_name}, ivec2({vec4_index}, 0), 0).{components}"
+    #     var_map[var_name] = {"type": var_type, "value": var_value}
+    return var_mapping, param_texture_dict
 
 
 

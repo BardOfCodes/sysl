@@ -1,0 +1,259 @@
+// Primitive Editing - Manipulate primitives by updating shader #defines
+
+// Store auxiliary data
+const primitiveAuxiliary = {{ auxiliary | tojson }};
+const varMap = JSON.parse(JSON.stringify(primitiveAuxiliary.var_map || {}));  // Deep copy
+const primitiveMap = primitiveAuxiliary.primitive_map || {};
+const editingUniforms = primitiveAuxiliary.uniforms || {};
+const uniformMap = primitiveAuxiliary.uniform_map || {};  // Maps index to uniform name
+
+// Track current editing state
+let currentEditingPrimitive = null;
+const originalVarMap = JSON.parse(JSON.stringify(varMap));  // Keep original for export comparison
+
+/**
+ * Formats a value for #define statement
+ */
+function formatDefineValue(value) {
+  if (Array.isArray(value)) {
+    if (value.length === 1) {
+      // Single element - use as plain float, not vec1
+      return value[0].toFixed(10);
+    }
+    const vecType = `vec${value.length}`;
+    const values = value.map(v => v.toFixed(value.length > 2 ? 6 : 10)).join(', ');
+    return `${vecType}(${values})`;
+  } else if (typeof value === 'number') {
+    return value.toFixed(10);
+  }
+  return String(value);
+}
+
+/**
+ * Generates #define block from var_map
+ * @param {number|null} selectedPrimitive - The primitive ID being edited (null for none)
+ * @returns {string} The #define block as a string
+ */
+function generateDefineBlock(selectedPrimitive) {
+  // Get variable names for the selected primitive
+  const selectedVars = selectedPrimitive !== null ? (primitiveMap[selectedPrimitive] || []) : [];
+  
+  // Map selected vars to uniform names using the uniform_map
+  const varToUniform = {};
+  
+  if (selectedVars.length > 0) {
+    selectedVars.forEach((varName, idx) => {
+      // Check both numeric and string keys since JSON might convert them
+      const uniformName = uniformMap[idx] !== undefined ? uniformMap[idx] : uniformMap[String(idx)];
+      
+      // Only map if uniform name exists and is not empty string
+      if (uniformName !== undefined && uniformName !== null && uniformName !== "") {
+        varToUniform[varName] = uniformName;
+      }
+    });
+  }
+  
+  // Generate #define statements
+  const defines = [];
+  for (const [varName, value] of Object.entries(varMap)) {
+    if (varToUniform[varName]) {
+      // Use uniform name instead of hardcoded value
+      defines.push(`#define ${varName} ${varToUniform[varName]}`);
+    } else {
+      // Use hardcoded value from var_map
+      defines.push(`#define ${varName} ${formatDefineValue(value)}`);
+    }
+  }
+  
+  return defines.join('\n');
+}
+
+/**
+ * Extracts the #define block from shader code
+ * @param {string} shaderCode - The shader code
+ * @returns {object} { before: string, after: string, defineBlock: string }
+ */
+function extractDefineBlock(shaderCode) {
+  // Find the first and last #define var_ lines
+  const lines = shaderCode.split('\n');
+  let firstDefineIdx = -1;
+  let lastDefineIdx = -1;
+  
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim().startsWith('#define var_')) {
+      if (firstDefineIdx === -1) firstDefineIdx = i;
+      lastDefineIdx = i;
+    }
+  }
+  
+  if (firstDefineIdx === -1) {
+    console.warn('No #define var_ lines found in shader');
+    return { before: shaderCode, after: '', defineBlock: '' };
+  }
+  
+  const before = lines.slice(0, firstDefineIdx).join('\n');
+  const after = lines.slice(lastDefineIdx + 1).join('\n');
+  const defineBlock = lines.slice(firstDefineIdx, lastDefineIdx + 1).join('\n');
+  
+  return { before, after, defineBlock };
+}
+
+/**
+ * Updates shader 0 and shader 1 with new #define block
+ * @param {number|null} selectedPrimitive - The primitive ID being edited
+ */
+function updateShadersForPrimitive(selectedPrimitive) {
+  const newDefineBlock = generateDefineBlock(selectedPrimitive);
+  
+  // Update shader 0 and shader 1
+  [0, 1].forEach(passIdx => {
+    const currentShaderCode = passes[passIdx].shader_code;
+    const { before, after } = extractDefineBlock(currentShaderCode);
+    const newShaderCode = before + '\n' + newDefineBlock + '\n' + after;
+    
+    if (newShaderCode !== currentShaderCode) {
+      updateShaderPass(passIdx, newShaderCode);
+    }
+  });
+}
+
+/**
+ * Saves current uniform values to var_map for the current primitive
+ */
+function saveUniformsToVarMap() {
+  if (currentEditingPrimitive === null) return;
+  
+  const selectedVars = primitiveMap[currentEditingPrimitive] || [];
+  
+  selectedVars.forEach((varName, idx) => {
+    // Check both numeric and string keys
+    const uniformName = uniformMap[idx] !== undefined ? uniformMap[idx] : uniformMap[String(idx)];
+    
+    // Only save if uniform name exists and is not empty string
+    if (uniformName !== undefined && uniformName !== null && uniformName !== "") {
+      const uniformValue = uniformValues[uniformName];
+      
+      if (uniformValue !== undefined) {
+        varMap[varName] = Array.isArray(uniformValue) ? [...uniformValue] : uniformValue;
+      }
+    }
+  });
+}
+
+/**
+ * Loads uniform values from var_map for a primitive
+ * @param {number} primitiveId - The primitive ID to load
+ */
+function loadUniformsFromVarMap(primitiveId) {
+  const selectedVars = primitiveMap[primitiveId] || [];
+  
+  selectedVars.forEach((varName, idx) => {
+    // Check both numeric and string keys
+    const uniformName = uniformMap[idx] !== undefined ? uniformMap[idx] : uniformMap[String(idx)];
+    
+    // Only load if uniform name exists and is not empty string
+    if (uniformName !== undefined && uniformName !== null && uniformName !== "") {
+      const value = varMap[varName];
+      
+      if (value !== undefined) {
+        // Create a deep copy to avoid reference issues
+        const newValue = Array.isArray(value) ? [...value] : value;
+        uniformValues[uniformName] = newValue;
+        
+        // Update UI controls - this sets slider positions
+        updateUIForUniform(uniformName, newValue);
+        
+        // For vectors, also make sure all components are individually accessible
+        if (Array.isArray(newValue)) {
+          const components = ['x', 'y', 'z', 'w'];
+          newValue.forEach((v, i) => {
+            const componentKey = `${uniformName}_${components[i]}`;
+            // Some UI frameworks might track individual components
+            if (uniformValues[componentKey] !== undefined) {
+              uniformValues[componentKey] = v;
+            }
+          });
+        }
+      }
+    }
+  });
+}
+
+/**
+ * Updates UI controls for a uniform
+ * @param {string} uniformName - Name of the uniform
+ * @param {*} value - Value to set
+ */
+function updateUIForUniform(uniformName, value) {
+  if (Array.isArray(value)) {
+    const components = ['x', 'y', 'z', 'w'];
+    
+    // Update vectorComponents object if it exists (from common_script.js)
+    if (typeof vectorComponents !== 'undefined' && vectorComponents[uniformName]) {
+      value.forEach((v, i) => {
+        vectorComponents[uniformName][components[i]] = v;
+      });
+    }
+    
+    // Update slider UI elements
+    value.forEach((v, i) => {
+      const elemId = `${uniformName}_${components[i]}`;
+      const elem = document.getElementById(elemId);
+      const valueElem = document.getElementById(`${elemId}_value`);
+      if (elem) elem.value = v;
+      if (valueElem) valueElem.textContent = v.toFixed(3);
+    });
+  } else {
+    const elem = document.getElementById(uniformName);
+    const valueElem = document.getElementById(`${uniformName}_value`);
+    if (elem) elem.value = value;
+    if (valueElem) valueElem.textContent = value.toFixed(3);
+  }
+}
+
+/**
+ * Handles primitive selection for editing
+ * @param {number} primitiveId - The selected primitive ID
+ */
+function onPrimitiveSelectedForEditing(primitiveId) {
+  // Save current uniform values to var_map
+  if (currentEditingPrimitive !== null) {
+    saveUniformsToVarMap();
+  }
+  
+  // Update current primitive
+  currentEditingPrimitive = primitiveId;
+  
+  // Update shaders with new primitive FIRST
+  updateShadersForPrimitive(primitiveId);
+  
+  // THEN load uniform values from var_map for new primitive
+  // This ensures uniformValues is properly set before any slider events
+  loadUniformsFromVarMap(primitiveId);
+}
+
+/**
+ * Exports the current var_map as JSON
+ */
+function exportVarMap() {
+  // Save current uniform values first
+  if (currentEditingPrimitive !== null) {
+    saveUniformsToVarMap();
+  }
+  
+  const dataStr = JSON.stringify(varMap, null, 2);
+  const dataBlob = new Blob([dataStr], { type: 'application/json' });
+  const url = URL.createObjectURL(dataBlob);
+  
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'var_map_edited.json';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+// Set up export button
+document.getElementById('export-varmap-btn')?.addEventListener('click', exportVarMap);
+

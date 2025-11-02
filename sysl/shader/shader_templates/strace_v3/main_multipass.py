@@ -192,7 +192,7 @@ vec2 SphereTracePostTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _
         float t = tmin;
         for (int i = _ZERO; i < _RAYCAST_MAX_STEPS && t < tmax; i++) {
             vec2 h = SCENE_EXPRESSION(ro + rd * t);
-            if (abs(h.x) < 0.0001 * t) {
+            if (abs(h.x) < 0.0001) {
                 res = vec2(t, h.y);
                 _h = true;
                 _s = i;
@@ -269,7 +269,7 @@ vec2 SphereTraceGeom(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
         t = tmin;
         for (int i = _ZERO; i < _RAYCAST_MAX_STEPS && t < tmax; i++) {
             vec2 h = GEOM_EXPRESSION(ro + rd * t);
-            if (abs(h.x) < 0.0001 * t) {
+            if (abs(h.x) < 0.0001) {
                 _h = true;
                 _s = i;
                 break;

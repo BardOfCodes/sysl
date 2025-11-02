@@ -42,6 +42,7 @@ from .evaluate import (eval_encoded_sdf_grid_3d as eval_encoded_sdf_grid_3d_v1,
                        eval_sdf_grid_3d as eval_sdf_grid_3d_v1)
 from .evaluate import rec_shader_eval
 from .shader_templates import imfx_shaders as imfx_shaders
+from ..utils import recursive_sm_to_smg
 # V1 -> Just ray trace and get to the sdf value. 
 # The 
 posttrace_map = {
@@ -53,7 +54,10 @@ posttrace_map = {
 def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr, 
                        settings: Dict[str, Any] | None = None, 
                        return_shader_context: bool=False,
-                       add_part_outline: bool=False) -> type_union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
+                       primitive_editing_mode: bool=False,
+                       prim_expr: gls.GLFunction | gls.GLExpr | None = None,
+                       map_first_pass_smg: bool=True,
+                       post_process_shader: bool=None) -> type_union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
     if settings is None:
         settings = DEFAULT_SETTINGS
 
@@ -61,33 +65,42 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
     all_global_sc = []
     extract_vars = settings.get("extract_vars", False)
     set_to_ubo = settings.get("set_to_ubo", False)
-    render_mode = settings.get("render_mode", "v3")
+
+    render_mode = settings.get("render_mode", "v4")
+    set_param_to_texture = settings.get("set_param_to_texture", False)
 
     # ================ FIRST PASS ================
     global_sc = GlobalShaderContext()
-
+    if map_first_pass_smg:
+        first_pass_expression = recursive_sm_to_smg(expression)
+    else:
+        first_pass_expression = expression
     if extract_vars:
-        varnamed_expr, _, var_map_base = expression._get_varnamed_expr(exclude_uniforms=True)
-        global_sc.create_var_map(var_map_base, set_to_ubo=set_to_ubo)
+        varnamed_expr, _, var_map_base = first_pass_expression._get_varnamed_expr(exclude_uniforms=True)
+        global_sc.create_var_map(var_map_base, set_to_ubo=set_to_ubo, set_param_to_texture=set_param_to_texture)
         global_sc = rec_sdf_shader_eval(varnamed_expr, global_sc=global_sc)
     else:
         # How to use V3 here? ->
-        global_sc = rec_sdf_shader_eval(expression, global_sc=global_sc)
+        global_sc = rec_sdf_shader_eval(first_pass_expression, global_sc=global_sc)
 
-    global_sc.resolve_codebook() # This will finins ahd add the function.
-    # This should give a shader context with all the required modules. 
-    # and then based on settings we will load the settings. 
+
+    # Do not link textures for the first pass. 
+    if primitive_editing_mode:
+        # We need some uniforms. 
+        gc_prim = GlobalShaderContext()
+        gc_prim = rec_sdf_shader_eval(prim_expr, global_sc=gc_prim)
+        global_sc.uniforms.update(gc_prim.uniforms)
+        
+    global_sc.resolve_codebook()
     global_sc.add_shader_module("main_sdf_trace")
-
     shader_code = global_sc.emit_shader_code(settings, version="sdf_trace")
     uniforms = global_sc.get_uniforms()
     textures = global_sc.get_textures()
-    # Do not link textures for the first pass. 
     
     shader_bundle = {
         "shader_code": shader_code,
         "uniforms": uniforms,
-        "textures": {},
+        "textures": textures,
         "input_FBOs": [],
         "output_FBO": {"name": "distance_travelled", "width": 512, "height": 512, "type": "vec2"}
     }
@@ -101,7 +114,7 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
         global_sc.push_codebook("GEOM_EXPRESSION", SCENE_EXPR_PROPS)
         if extract_vars:
             varnamed_expr, _, var_map_base = expression._get_varnamed_expr(exclude_uniforms=True)
-            global_sc.create_var_map(var_map_base, set_to_ubo=set_to_ubo)
+            global_sc.create_var_map(var_map_base, set_to_ubo=set_to_ubo, set_param_to_texture=set_param_to_texture)
             global_sc = rec_sdf_shader_eval(varnamed_expr, global_sc=global_sc)
         else:
             global_sc = rec_sdf_shader_eval(expression, global_sc=global_sc)
@@ -112,13 +125,14 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
         global_sc = GlobalShaderContext()
 
     if extract_vars:
-        global_sc.create_var_map(var_map_base, set_to_ubo=set_to_ubo)
+        global_sc.create_var_map(var_map_base, set_to_ubo=set_to_ubo, set_param_to_texture=set_param_to_texture)
         global_sc = rec_shader_eval(varnamed_expr, global_sc=global_sc)
     else:
         global_sc = rec_shader_eval(expression, global_sc=global_sc)
-    global_sc.resolve_codebook() # This will finins ahd add the function.
-    # This should give a shader context with all the required modules. 
-    # and then based on settings we will load the settings. 
+    if primitive_editing_mode:
+        global_sc.uniforms.update(gc_prim.uniforms)
+        
+    global_sc.resolve_codebook() 
     if render_mode in ["v1", "v2"]:
         global_sc.add_shader_module(posttrace_map[render_mode])
     elif render_mode in ["v3", "v4"]:
@@ -143,11 +157,20 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
     all_global_sc.append(global_sc)
     
     # ================ THIRD PASS ================
-    if add_part_outline:
-        outline_amount = 1.0
-        shader_code = imfx_shaders.part_outline.PART_OUTLINE_SHADER.substitute(outline_amount=outline_amount)
-        input_FBOs = [{"name": "distance_travelled", "width": 512, "height": 512, "type": "vec2"},
-            {"name": output_name, "width": 512, "height": 512, "type": "vec4"}]
+    # TBD -> Do this also with an expression to do proper chaining.
+    if post_process_shader:
+        for shader_name in post_process_shader:
+            if shader_name == "part_outline":
+                outline_amount = 0.8
+                shader_code = imfx_shaders.PART_OUTLINE_SHADER.substitute(outline_amount=outline_amount)
+                input_FBOs = [{"name": "distance_travelled", "width": 512, "height": 512, "type": "vec2"},
+                    {"name": output_name, "width": 512, "height": 512, "type": "vec4"}]
+            elif shader_name == "selection_highlight":
+                shader_code = imfx_shaders.SELECTION_HIGHLIGHT_SHADER.substitute()
+                input_FBOs = [{"name": "distance_travelled", "width": 512, "height": 512, "type": "vec2"},
+                    {"name": output_name, "width": 512, "height": 512, "type": "vec4"}]
+            else:
+                raise ValueError(f"Invalid post process shader: {shader_name}")
     else:
         outline_amount = 1.0
         shader_code = imfx_shaders.basic_third_pass.BASIC_THIRD_PASS_SHADER.substitute()
@@ -166,7 +189,6 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
         return all_shader_bundles, all_global_sc
     else:
         return all_shader_bundles
-    
 
 
 @singledispatch

@@ -1,0 +1,221 @@
+// Primitive Tracking - Click to select primitives from FBO
+
+let primitiveTrackingEnabled = true;  // Always enabled by default
+let selectedPrimitiveId = null;
+let mouseDownPos = null;
+let isDragging = false;
+
+/**
+ * Reads pixel data from a framebuffer at the specified position
+ * @param {WebGL2RenderingContext} gl - WebGL context
+ * @param {Object} fbo - TWGL framebuffer info
+ * @param {number} x - X coordinate in canvas space
+ * @param {number} y - Y coordinate in canvas space
+ * @param {number} channels - Number of channels (1=R, 2=RG, 3=RGB, 4=RGBA)
+ * @returns {Float32Array} Pixel data
+ */
+function readPixelFromFBO(gl, fbo, x, y, channels) {
+  // Bind the framebuffer
+  twgl.bindFramebufferInfo(gl, fbo);
+  
+  // Prepare pixel buffer based on channel count
+  const formatMap = {
+    1: gl.RED,
+    2: gl.RG,
+    3: gl.RGB,
+    4: gl.RGBA
+  };
+  
+  const format = formatMap[channels] || gl.RGBA;
+  const pixelData = new Float32Array(channels);
+  
+  // Read pixel (Y is inverted in WebGL)
+  const canvasY = canvas.height - y - 1;
+  gl.readPixels(x, canvasY, 1, 1, format, gl.FLOAT, pixelData);
+  
+  // Unbind framebuffer
+  twgl.bindFramebufferInfo(gl, null);
+  
+  return pixelData;
+}
+
+/**
+ * Tracks mouse down position to detect dragging
+ */
+function handleMouseDown(event) {
+  const rect = canvas.getBoundingClientRect();
+  mouseDownPos = {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
+  };
+  isDragging = false;
+}
+
+/**
+ * Detects if mouse has moved significantly (dragging)
+ */
+function handleMouseMove(event) {
+  if (mouseDownPos) {
+    const rect = canvas.getBoundingClientRect();
+    const currentX = event.clientX - rect.left;
+    const currentY = event.clientY - rect.top;
+    const distance = Math.sqrt(
+      Math.pow(currentX - mouseDownPos.x, 2) + 
+      Math.pow(currentY - mouseDownPos.y, 2)
+    );
+    
+    // If moved more than 5 pixels, consider it a drag
+    if (distance > 5) {
+      isDragging = true;
+    }
+  }
+}
+
+/**
+ * Handles canvas click for primitive selection (only if not dragging)
+ */
+function handleCanvasClick(event) {
+  if (!primitiveTrackingEnabled || isDragging) return;
+  
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.floor((event.clientX - rect.left) * (canvas.width / rect.width));
+  const y = Math.floor((event.clientY - rect.top) * (canvas.height / rect.height));
+  
+  // Check if distance_travelled FBO exists
+  const fboName = 'distance_travelled';
+  let targetFBO = fbos[fboName];
+  
+  // Handle ping-pong buffers
+  if (!targetFBO && selfRefBuffers.includes(fboName)) {
+    const readIdx = currentFrame % 2;
+    targetFBO = fbos[fboName + '_' + readIdx];
+  }
+  
+  if (!targetFBO) {
+    console.warn('distance_travelled FBO not found');
+    return;
+  }
+  
+  // Read the vec2 pixel data (distance, primitive_id)
+  const pixelData = readPixelFromFBO(gl, targetFBO, x, y, 2);
+  
+  // Extract primitive ID (second component of vec2)
+  selectedPrimitiveId = Math.floor(pixelData[1]);
+  
+  // Update UI
+  const displayElement = document.getElementById('selected-primitive-id');
+  if (displayElement) {
+    displayElement.textContent = selectedPrimitiveId;
+  }
+  
+  // Update shader with new selection
+  updateSelectIdInShader(selectedPrimitiveId);
+  
+  // Trigger primitive editing callback if available
+  if (typeof onPrimitiveSelectedForEditing === 'function') {
+    onPrimitiveSelectedForEditing(selectedPrimitiveId);
+  }
+}
+
+/**
+ * Toggles primitive tracking mode
+ */
+function togglePrimitiveTracking() {
+  primitiveTrackingEnabled = !primitiveTrackingEnabled;
+  
+  const button = document.getElementById('disable-tracking-btn');
+  if (button) {
+    button.textContent = primitiveTrackingEnabled ? 'Disable Tracking' : 'Enable Tracking';
+    button.classList.toggle('bg-red-100', primitiveTrackingEnabled);
+    button.classList.toggle('hover:bg-red-200', primitiveTrackingEnabled);
+    button.classList.toggle('text-red-700', primitiveTrackingEnabled);
+    button.classList.toggle('bg-green-100', !primitiveTrackingEnabled);
+    button.classList.toggle('hover:bg-green-200', !primitiveTrackingEnabled);
+    button.classList.toggle('text-green-700', !primitiveTrackingEnabled);
+  }
+}
+
+/**
+ * Modifies a shader by replacing a #define line
+ * @param {string} shaderCode - Original shader code
+ * @param {string} defineName - Name of the define (e.g., "SELECT_ID")
+ * @param {string|number} newValue - New value for the define
+ * @returns {string} Modified shader code
+ */
+function modifyShaderDefine(shaderCode, defineName, newValue) {
+  // Match #define DEFINE_NAME with any value (including negative numbers, floats, etc.)
+  const regex = new RegExp(`^(\\s*#define\\s+${defineName}\\s+).*$`, 'm');
+  
+  // Use a function for replacement to avoid $1 interpolation issues
+  const result = shaderCode.replace(regex, (match, prefix) => {
+    return prefix + newValue;
+  });
+  
+  return result;
+}
+
+/**
+ * Updates a specific shader pass with modified code
+ * @param {number} passIndex - Index of the shader pass to update
+ * @param {string} newShaderCode - New shader code
+ */
+function updateShaderPass(passIndex, newShaderCode) {
+  if (passIndex < 0 || passIndex >= passes.length) {
+    console.error(`Invalid pass index: ${passIndex}`);
+    return;
+  }
+  
+  // Update the pass data
+  passes[passIndex].shader_code = newShaderCode;
+  
+  // Recompile just this shader
+  try {
+    const newProgram = twgl.createProgramInfo(gl, [vertexShaderSource, newShaderCode]);
+    
+    // Set up UBO bindings for the new program
+    {% if ubo_uniforms %}
+    if (window.UBOLoader) {
+      UBOLoader.setupUBOBindings(gl, newProgram.program);
+    }
+    {% endif %}
+    
+    // Clean up old program
+    if (programs[passIndex] && programs[passIndex].program) {
+      gl.deleteProgram(programs[passIndex].program);
+    }
+    
+    // Replace with new program
+    programs[passIndex] = newProgram;
+    console.log(`Recompiled shader pass ${passIndex}`);
+  } catch (error) {
+    console.error(`Error recompiling shader pass ${passIndex}:`, error);
+  }
+}
+
+/**
+ * Updates the SELECT_ID in the third shader (index 2)
+ * @param {number} primitiveId - The primitive ID to select
+ */
+function updateSelectIdInShader(primitiveId) {
+  const targetPassIndex = 2;  // Third shader (0-indexed)
+  
+  if (targetPassIndex >= passes.length) {
+    console.warn(`Shader pass ${targetPassIndex} does not exist`);
+    return;
+  }
+  
+  const currentShaderCode = passes[targetPassIndex].shader_code;
+  const modifiedShaderCode = modifyShaderDefine(currentShaderCode, 'SELECT_ID', primitiveId);
+  
+  if (modifiedShaderCode !== currentShaderCode) {
+    updateShaderPass(targetPassIndex, modifiedShaderCode);
+  }
+}
+
+// Set up event listeners
+canvas.addEventListener('mousedown', handleMouseDown);
+canvas.addEventListener('mousemove', handleMouseMove);
+canvas.addEventListener('click', handleCanvasClick);
+
+document.getElementById('disable-tracking-btn')?.addEventListener('click', togglePrimitiveTracking);
+

@@ -60,7 +60,10 @@ def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr,
         settings = DEFAULT_SETTINGS
     extract_vars = settings.get("extract_vars", False)
     set_to_ubo = settings.get("set_to_ubo", False)
+    set_param_to_texture = settings.get("set_param_to_texture", False)
     render_mode = settings.get("render_mode", "v4")
+    if set_param_to_texture:
+        raise NotImplementedError("Setting parameters to texture is not implemented yet for single pass.")
 
     global_sc = GlobalShaderContext()
     # How to use V3 here? ->
@@ -425,6 +428,7 @@ mat_to_type_map = {
     sls.MatReference: "float",
     sls.EncodedRGBGrid3D: "float",
     sls.MaterialV4: "MATPoint",
+    sls.SMPLMaterialV4: "MATPoint",
 }
 
 @rec_shader_eval.register

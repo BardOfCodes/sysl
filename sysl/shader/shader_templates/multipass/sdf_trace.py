@@ -10,7 +10,7 @@ import numpy as np
 from ..common import CONSTANTS
 
 CONSTANTS.update({
-    "_CONSERVATIVE_STEP_DIST": ("float", 0.99),
+    "_CONSERVATIVE_STEP_DIST": ("float", 1.0),
 })
 
 mainImage = register_shader_module("""
@@ -101,7 +101,7 @@ vec2 raycast_sdf_trace(in vec3 ro, in vec3 rd) {
         float t = tmin;
         for (int i = _ZERO; i < _RAYCAST_MAX_STEPS && t < tmax; i++) {
             vec2 h = SCENE_EXPRESSION(ro + rd * t);
-            if (abs(h.x) < 0.0001 * t) {
+            if (abs(h.x) < 0.0001) {
                 res = vec2(t, h.y);
                 break;
             }

@@ -4,9 +4,21 @@
   {% include "twgl_texture_loader.js.j2" %}
   {% endif %}
   
+  {% if ubo_uniforms %}
+  {% include "ubo_loader.js.html.j2" %}
+  {% endif %}
+  
   // Include common script functionality first
   // Note: common_script.js.html.j2 sets up uniformValues and handles resolution/canvas sizing
   {% include "common_script.js.html.j2" %}
+  
+  {% if allow_singular_ubo_edit %}
+  {% include "ubo_editor.js.html.j2" %}
+  {% endif %}
+  
+  {% if enable_ubo_animation %}
+  {% include "ubo_animation.js.html.j2" %}
+  {% endif %}
   
   // Multi-buffer specific data
   const passes = {{ passes | tojson }};
@@ -17,6 +29,13 @@
   const textureRegistry = {
     {% for texname, texdata in textures.items() %}
     "{{ texname }}": {{ texdata | tojson }},
+    {% endfor %}
+  };
+  
+  // Extract UBO registry from Jinja
+  const uboRegistry = {
+    {% for uboname, ubodata in ubo_uniforms.items() %}
+    "{{ uboname }}": {{ ubodata | tojson }},
     {% endfor %}
   };
   
@@ -155,6 +174,14 @@
     programs = shaderCodes.map((shaderCode, i) => {
       try {
         const prog = twgl.createProgramInfo(gl, [vertexShaderSource, shaderCode]);
+        
+        {% if ubo_uniforms %}
+        // Set up UBO bindings for this program
+        if (window.UBOLoader) {
+          UBOLoader.setupUBOBindings(gl, prog.program);
+        }
+        {% endif %}
+        
         console.log(`Compiled shader ${i}`);
         return prog;
       } catch (error) {
@@ -178,6 +205,13 @@
     loadedTextures = await loadTextures(gl, textureRegistry);
     {% endif %}
     
+    {% if ubo_uniforms %}
+    // Initialize UBOs
+    if (window.UBOLoader) {
+      UBOLoader.initializeUBOs(gl, uboRegistry);
+    }
+    {% endif %}
+    
     // Start render loop
     requestAnimationFrame(render);
   }
@@ -186,6 +220,25 @@
   let isPlaying = true;
   let shouldStep = false;
   let frameNum = 0;
+  
+  // FPS tracking
+  let lastFrameTime = performance.now();
+  let frameCount = 0;
+  let fps = 0;
+  
+  function updateFPS() {
+    frameCount++;
+    const currentTime = performance.now();
+    const deltaTime = currentTime - lastFrameTime;
+    
+    // Update FPS every 500ms
+    if (deltaTime >= 500) {
+      fps = Math.round((frameCount * 1000) / deltaTime);
+      document.getElementById('fps-display').textContent = fps;
+      frameCount = 0;
+      lastFrameTime = currentTime;
+    }
+  }
 
   document.getElementById('step-btn').onclick = () => {
     isPlaying = false;
@@ -296,6 +349,7 @@
     shouldStep = false;
     frameNum++;
     document.getElementById('frame-num').textContent = frameNum;
+    updateFPS();
     {% endif %}
     
     // Update time uniform in uniformValues (managed by common_script.js)
@@ -396,4 +450,12 @@
 
   // Start initialization
   init();
+  
+  {% if primitive_editing_mode %}
+  // Include primitive editing module
+  {% include "primitive_editing.js.html.j2" %}
+  {% endif %}
+  
+  // Always include primitive tracking (UI visibility controlled by show_primitive_tracking)
+  {% include "primitive_tracking.js.html.j2" %}
 </script>

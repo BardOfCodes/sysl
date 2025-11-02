@@ -1,2 +1,3 @@
 from .part_outline import PART_OUTLINE_SHADER
 from .basic_third_pass import BASIC_THIRD_PASS_SHADER
+from .selection_highlight import SELECTION_HIGHLIGHT_SHADER
