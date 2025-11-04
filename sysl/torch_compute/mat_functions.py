@@ -1,5 +1,11 @@
 import torch as th
 import math
+
+def material_v1(points, idx):
+    # ADD here. 
+    materials = th.ones_like(points[:, 0:1], dtype=th.int32) * idx
+    return materials
+
 def material_v3(points, albedo, roughness, emissive, clearcoat, metallic):
     # ADD here. 
     materials = th.cat([albedo, roughness, emissive, clearcoat, metallic], dim=-1).unsqueeze(0)
