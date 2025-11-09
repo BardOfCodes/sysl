@@ -49,6 +49,75 @@ void mainImage_post_trace(out vec4 color, in vec2 pxy )
 }
 """)
 
+mainImage_post_trace_AA = register_shader_module("""
+@name mainImage_post_trace_v4_AA
+@inputs color, fragCoord, resolution, ca, lig
+@outputs color
+@dependencies  setCamera_v1, LightPackage_v4, ShadeRayPostTrace_v4, ToneMapping, BasicSun_v4
+@vardeps cameraDistance, cameraOrigin, cameraAngleX, cameraAngleY, resolution
+@vardeps _FOCAL_LENGTH, _ZERO, _AA
+// PASS 2 (shading) — AA atlas aware
+
+const vec2 OFFS[4] = vec2[4](
+    vec2(-0.25, -0.25),
+    vec2(+0.25, -0.25),
+    vec2(-0.25, +0.25),
+    vec2(+0.25, +0.25)
+);
+
+void mainImage_post_trace(out vec4 color, in vec2 pxy)
+{
+    // -----------------------------------------------------------
+    // 0) Read distance from the atlas (unchanged)
+    // -----------------------------------------------------------
+    float dist = texelFetch(distance_travelled, ivec2(pxy), 0).r;
+
+    // -----------------------------------------------------------
+    // 1) Determine quadrant in the 2×2 atlas
+    //    resolution.xy is full atlas size (2W x 2H)
+    // -----------------------------------------------------------
+    vec2 baseRes = 0.5 * resolution.xy;          // (W, H)
+    vec2 qFloat  = floor(pxy / baseRes);         // (0 or 1, 0 or 1)
+    int sampleIdx = int(qFloat.x) + 2 * int(qFloat.y);   // 0..3
+
+    vec2 pxy_local = pxy - qFloat * baseRes;     // local pixel inside quadrant
+
+    // -----------------------------------------------------------
+    // 2) Subpixel jitter (same four offsets as pass 1)
+    // -----------------------------------------------------------
+    vec2 jitterPx = OFFS[sampleIdx];
+
+    // -----------------------------------------------------------
+    // 3) Camera (unchanged)
+    // -----------------------------------------------------------
+    vec3 ta = vec3(0.0, 1.0, 0.0) + cameraOrigin;
+    vec3 ro = ta + cameraDistance * vec3(
+        cos(cameraAngleX) * sin(cameraAngleY),
+        sin(cameraAngleX),
+        cos(cameraAngleX) * cos(cameraAngleY)
+    );
+
+    mat3 ca = setCamera(ro, ta, 0.0);
+
+    // -----------------------------------------------------------
+    // 4) Compute ray direction (THIS is the fix)
+    //    Use pxy_local + jitter, normalized by *baseRes* (not full res)
+    // -----------------------------------------------------------
+    vec2 p = ((pxy_local + jitterPx) * 2.0 - baseRes) / baseRes;
+
+    vec3 rd = ca * normalize(vec3(p, _FOCAL_LENGTH));
+
+    // -----------------------------------------------------------
+    // 5) Shading (unchanged)
+    // -----------------------------------------------------------
+    DirectionalLight sun = BasicSun();
+    int s = 0;
+
+    vec3 rgb = ShadeRayPostTrace(sun, ro, rd, s, dist);
+    rgb = ToneMapping(rgb);
+
+    color = vec4(rgb, 1.0);
+}""")
 
 ShadeRayPostTrace_v4 = register_shader_module("""
 @name ShadeRayPostTrace_v4
@@ -95,6 +164,7 @@ vec3 ShadeRayPostTrace(DirectionalLight sun, vec3 ro, vec3 rd, out int steps, fl
         // secondary ray
         s = 0;
         res = SphereTraceGeom(pt+n*0.01, reflect_dir, 100.0, hit, s);
+        //res = SphereTracePostTrace(pt+n*0.01, reflect_dir, 100.0, hit, s, 0.0);
         t = res.x;
         steps += s;
 

@@ -326,7 +326,7 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
         template_name (str): Name of the Jinja template file
         output_file (str): Output HTML file path (optional)
         mouse_control (bool): Enable mouse-controlled camera
-        resolution_via_scale (bool): Enable resolution scaling
+        resolution_via_scale (bool): Enable resolution scaling (scales all FBOs and canvas)
         show_controls (bool): Show shader control sliders
         backend (str): Rendering backend (only 'twgl' supported for multi-buffer)
         layout_horizontal (bool): Use horizontal layout (canvas left, controls right)
@@ -340,6 +340,12 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
             - primitive_map: Dict mapping primitive IDs to list of variable names
             - uniforms: Dict of editing uniforms (translate, axis_angle, etc.)
             - uniform_map: Dict mapping list index to uniform name (e.g., {0: 'size', 1: 'round_dilate_taper_bend'})
+        
+    FBO Sizing:
+        - Each FBO uses the width/height specified in its FBO spec
+        - The canvas is automatically sized to match the final output FBO (the pass outputting to 'image')
+        - If output_FBO is 'image' without size info, the canvas size is inferred from input FBOs or defaults to 512x512
+        - resolution_via_scale applies a scale factor to both FBO sizes and canvas size
         
     FBO type mapping:
         - 'float': R32F (1 channel, 32-bit float)
@@ -374,14 +380,16 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
         output_fbo = shader_def['output_FBO']
         if isinstance(output_fbo, dict):
             output_name = output_fbo['name']
-            if output_name != 'image' and output_name not in fbo_specs:
+            # Always add output FBOs to specs, including 'image'
+            if output_name not in fbo_specs:
                 fbo_specs[output_name] = output_fbo
         elif output_fbo == 'image':
             output_name = 'image'
+            # Don't add 'image' here if it's just a string - it will be handled at the end
         else:
             # Backwards compatibility: string name defaults to vec4
             output_name = output_fbo
-            if output_fbo != 'image' and output_fbo not in fbo_specs:
+            if output_fbo not in fbo_specs:
                 fbo_specs[output_fbo] = {'name': output_fbo, 'width': 512, 'height': 512, 'type': 'vec4'}
         
         # Get uniforms from shader definition
@@ -407,6 +415,42 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
     for pass_data in passes:
         if pass_data['output_FBO'] in pass_data['input_FBOs']:
             self_referencing_fbos.append(pass_data['output_FBO'])
+    
+    # Find the final output FBO size (the pass that outputs to 'image')
+    MAX_SIZE = 2048  # Safety limit
+    
+    # Find last pass that outputs to 'image'
+    image_pass_idx = next((i for i in range(len(passes) - 1, -1, -1) if passes[i]['output_FBO'] == 'image'), -1)
+    shader_def = shader_definitions[image_pass_idx]
+    
+    if isinstance(shader_def.get('output_FBO'), dict):
+        # output_FBO is a dict with size info
+        final_output_size = {
+            'width': min(int(shader_def['output_FBO']['width']), MAX_SIZE),
+            'height': min(int(shader_def['output_FBO']['height']), MAX_SIZE)
+        }
+        # Add 'image' to fbo_specs so it gets an FBO created
+        fbo_specs['image'] = shader_def['output_FBO']
+    else:
+        # output_FBO is string 'image', use first input FBO size
+        first_input = shader_def['input_FBOs'][0]
+        if isinstance(first_input, dict):
+            final_output_size = {
+                'width': min(int(first_input['width']), MAX_SIZE),
+                'height': min(int(first_input['height']), MAX_SIZE)
+            }
+        else:
+            final_output_size = {
+                'width': min(int(fbo_specs[first_input]['width']), MAX_SIZE),
+                'height': min(int(fbo_specs[first_input]['height']), MAX_SIZE)
+            }
+        # Add 'image' to fbo_specs with inferred size
+        fbo_specs['image'] = {
+            'name': 'image',
+            'width': final_output_size['width'],
+            'height': final_output_size['height'],
+            'type': 'vec4'
+        }
     
     # Collect textures from all passes
     all_textures = {}
@@ -489,6 +533,7 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
         passes=passes,
         fbo_specs=fbo_specs,
         self_referencing_fbos=self_referencing_fbos,
+        final_output_size=final_output_size,  # Canvas will be sized to match this
         uniforms=ctrl_uniforms,  # For controls.html.j2 (UI controls only)
         underlying_uniforms=underlying_uniforms,  # For common_script.js.html.j2 to initialize uniformValues
         resolution_via_scale=resolution_via_scale,

@@ -44,7 +44,6 @@ mainImage = register_shader_module("""
 @vardeps _AA, cameraOrigin, cameraDistance, cameraAngleX, cameraAngleY, resolution, _FOCAL_LENGTH, _ZERO
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
-    vec2 mo = vec2(0.0, 0.0);
     // camera	
     vec3 ta = vec3( 0.0, 1.0, -0.0 ) + cameraOrigin;
     vec3 ro = ta + cameraDistance * vec3(

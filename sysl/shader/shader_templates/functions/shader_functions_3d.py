@@ -621,16 +621,19 @@ InexactSuperQuadrics3D = register_shader_module("""
 @inputs pos, a, b, c
 @outputs dist
 @dependencies
+@vardeps EPSILON
 float InexactSuperQuadrics3D( vec3 p, vec3 skew_vec, float epsilon_1, float epsilon_2 )
 {
-  vec4 q = abs(p);
+  vec3 q = abs(p);
   float out_1 = pow(q.x / skew_vec.x, 2.0 / (epsilon_2 + EPSILON));
   float out_2 = pow(q.y / skew_vec.y, 2.0 / (epsilon_2 + EPSILON));
   float out_3 = pow(q.z / skew_vec.z, 2.0 / (epsilon_1 + EPSILON));
 
   float inside_term = pow(abs(out_1 + out_2) + EPSILON, epsilon_2 / (epsilon_1 + EPSILON));
   float base_sdf = 1.0 - pow(abs(inside_term + out_3) + EPSILON, -epsilon_1 / 2.0);
-
+  // scale the sdf by max skew?
+  //float max_skew = max(skew_vec.x, max(skew_vec.y, skew_vec.z));
+  //base_sdf *= 0.01;
   return base_sdf;
 }""")
 

@@ -175,27 +175,27 @@
           <h4 class="font-semibold text-gray-800">Resolution</h4>
           <div class="space-y-2">
             <label for="canvasWidth" class="block text-sm font-medium text-purple-700">
-              Width: <span id="canvasWidth_value" class="text-purple-600 font-mono">512</span>px
+              Width: <span id="canvasWidth_value" class="text-purple-600 font-mono">{{ final_output_size.width if final_output_size is defined else 512 }}</span>px
             </label>
             <input
               id="canvasWidth"
               type="range"
               min="256"
-              max="1024"
+              max="2048"
               step="32"
-              value="512"
+              value="{{ final_output_size.width if final_output_size is defined else 512 }}"
               class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
             />
             <label for="canvasHeight" class="block text-sm font-medium text-purple-700">
-              Height: <span id="canvasHeight_value" class="text-purple-600 font-mono">512</span>px
+              Height: <span id="canvasHeight_value" class="text-purple-600 font-mono">{{ final_output_size.height if final_output_size is defined else 512 }}</span>px
             </label>
             <input
               id="canvasHeight"
               type="range"
               min="256"
-              max="1024"
+              max="2048"
               step="32"
-              value="512"
+              value="{{ final_output_size.height if final_output_size is defined else 512 }}"
               class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
             />
             {% if resolution_via_scale %}
@@ -222,7 +222,7 @@
               class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
             />
             <div class="text-xs text-green-600">
-              Effective resolution: <span id="effective_resolution" class="font-mono">512 × 512</span>
+              Effective resolution: <span id="effective_resolution" class="font-mono">{{ final_output_size.width if final_output_size is defined else 512 }} × {{ final_output_size.height if final_output_size is defined else 512 }}</span>
             </div>
           </div>
         </div>

@@ -334,13 +334,15 @@
     resizeCanvas(); // Recalculate resolution
     {% endif %}
     
-    // Reset canvas size
-    document.getElementById('canvasWidth').value = 512;
-    document.getElementById('canvasHeight').value = 512;
-    document.getElementById('canvasWidth_value').textContent = '512';
-    document.getElementById('canvasHeight_value').textContent = '512';
-    document.getElementById('canvas-container').style.width = '512px';
-    document.getElementById('canvas-container').style.height = '512px';
+    // Reset canvas size to initial values (from controls)
+    const initialWidth = parseInt(document.getElementById('canvasWidth').getAttribute('value')) || 512;
+    const initialHeight = parseInt(document.getElementById('canvasHeight').getAttribute('value')) || 512;
+    document.getElementById('canvasWidth').value = initialWidth;
+    document.getElementById('canvasHeight').value = initialHeight;
+    document.getElementById('canvasWidth_value').textContent = initialWidth;
+    document.getElementById('canvasHeight_value').textContent = initialHeight;
+    document.getElementById('canvas-container').style.width = initialWidth + 'px';
+    document.getElementById('canvas-container').style.height = initialHeight + 'px';
     resizeCanvas();
   }
   {% endif %} 

@@ -19,6 +19,7 @@ CONSTANTS = {
     "_NORMAL_STEPS": ('int', 4),
     "_AO_STEPS": ('int', 5),
     "_COLOR_FACTOR": ('float', 2.0),
+    "EPSILON": ('float', 1e-9),
 }
 UNIFORMS = {
     "castShadows": {

@@ -1,6 +1,6 @@
 from string import Template
 
-PART_OUTLINE_SHADER = Template("""
+PART_OUTLINE_NOBG_SHADER = Template("""
 #version 300 es
 #ifdef GL_ES
 precision highp float;
@@ -36,7 +36,6 @@ bool is_outline(vec2 uv)
     }
     return false;
 }
-
 void main(void)
 {
     vec2 uv = gl_FragCoord.xy / resolution;
@@ -47,5 +46,8 @@ void main(void)
     fragColor = outline
         ? mix(base_color, vec4(0.0, 0.0, 0.0, 1.0), OUTLINE_AMOUNT)
         : base_color;
+    float center_ind = texture(distance_travelled, uv).g;
+    int center_id = int(floor(center_ind + 0.5));
+    fragColor = center_id < 0 ? vec4(1.0, 1.0, 1.0, 1.0) : fragColor;
 }
 """)

@@ -23,7 +23,6 @@ mainImage = register_shader_module("""
 // Technically when we actually do AA we need to save a bigger buffer - not average it out.
 void main_sdf_trace( out vec4 fragColor, in vec2 fragCoord )
 {
-    vec2 mo = vec2(0.0, 0.0);
     // camera	
     vec3 ta = vec3( 0.0, 1.0, -0.0 ) + cameraOrigin;
     vec3 ro = ta + cameraDistance * vec3(
@@ -44,6 +43,64 @@ void main_sdf_trace( out vec4 fragColor, in vec2 fragCoord )
 
     
     fragColor = vec4(trace_result.x, trace_result.y, 0.0, 1.0);  // Only .r will be stored in R32F FBO
+}""")
+
+mainImage_AA = register_shader_module("""
+@name main_sdf_trace_AA
+@inputs fragColor, fragCoord
+@outputs fragColor
+@dependencies setCamera_v1, raycast_sdf_trace
+@vardeps _AA, cameraOrigin, cameraDistance, cameraAngleX, cameraAngleY, resolution, _FOCAL_LENGTH, _ZERO
+// We Ray trace and store the distance travelled in a float FBO 
+// Technically when we actually do AA we need to save a bigger buffer - not average it out.
+const vec2 OFFS[4] = vec2[4](
+    vec2(-0.25, -0.25),
+    vec2(+0.25, -0.25),
+    vec2(-0.25, +0.25),
+    vec2(+0.25, +0.25)
+);
+void main_sdf_trace( out vec4 fragColor, in vec2 fragCoord )
+{
+    // -----------------------------
+    // 0) Atlas / quadrant bookkeeping
+    // -----------------------------
+    vec2 baseRes = 0.5 * resolution.xy;               // size of ONE sub-image (W,H)
+    vec2 qFloat   = floor(fragCoord / baseRes);       // (0/1, 0/1)
+    ivec2 q       = ivec2(qFloat);
+    int sampleIdx = q.x + 2 * q.y;                    // 0..3
+
+    // Local pixel coords inside the sub-image
+    vec2 localFrag = fragCoord - qFloat * baseRes;    // [0..W) x [0..H)
+
+    // -----------------------------
+    // 1) Sub-pixel jitter (in pixel units)
+    //    You can tweak +/-0.25 to taste; +/-0.5 is full pixel diagonals.
+    // -----------------------------
+    vec2 jitterPx = OFFS[sampleIdx];
+
+    // -----------------------------
+    // 2) Camera setup
+    // -----------------------------
+    vec3 ta = vec3(0.0, 1.0, 0.0) + cameraOrigin;
+    vec3 ro = ta + cameraDistance * vec3(
+        cos(cameraAngleX) * sin(cameraAngleY),
+        sin(cameraAngleX),
+        cos(cameraAngleX) * cos(cameraAngleY)
+    );
+    mat3 ca = setCamera(ro, ta, 0.0);
+
+    // -----------------------------
+    // 3) Ray for this "sub-image" (normalize using baseRes)
+    //    NOTE: normalize NDC using baseRes, not full resolution
+    // -----------------------------
+    vec2 p = ((localFrag + jitterPx) * 2.0 - baseRes) / baseRes;   // [-1,1] in sub-image
+    vec3 rd = ca * normalize(vec3(p, _FOCAL_LENGTH));
+
+    // -----------------------------
+    // 4) Trace and pack outputs
+    // -----------------------------
+    vec2 t = raycast_sdf_trace(ro, rd);   // t.x: distance, t.y: primitive id (or whatever you return)
+    fragColor = vec4(t.x, t.y, 0.0, 1.0); // R32F (distance) + optional G for pid
 }""")
 
 raycast_sdf_trace = register_shader_module("""

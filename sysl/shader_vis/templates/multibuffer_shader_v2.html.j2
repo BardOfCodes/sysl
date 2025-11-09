@@ -8,7 +8,7 @@
       
       <!-- Canvas Area -->
       <div class="{% if layout_horizontal %}flex-shrink-0{% else %}flex justify-center{% endif %}">
-        <div id="canvas-container" class="relative bg-black rounded-lg overflow-hidden shadow-lg" style="width: 512px; height: 512px;">
+        <div id="canvas-container" class="relative bg-black rounded-lg overflow-hidden shadow-lg" style="width: {{ final_output_size.width }}px; height: {{ final_output_size.height }}px;">
           <canvas
             id="glcanvas"
             class="absolute inset-0 w-full h-full"

@@ -25,6 +25,9 @@
   const fboSpecs = {{ fbo_specs | tojson }};
   const selfRefBuffers = {{ self_referencing_fbos | tojson }};
   
+  // Final output FBO dimensions (for canvas sizing)
+  const finalOutputSize = {{ final_output_size | tojson }};
+  
   // Extract texture registry from Jinja
   const textureRegistry = {
     {% for texname, texdata in textures.items() %}
@@ -52,6 +55,27 @@
   void main() {
     gl_Position = vec4(position, 0.0, 1.0);
   }`;
+  
+  // Simple blit shader for copying 'image' FBO to canvas
+  const blitFragmentShader = `#version 300 es
+  precision highp float;
+  uniform sampler2D imageTex;
+  uniform vec2 resolution;
+  out vec4 fragColor;
+  
+  void main() {
+    vec2 uv = gl_FragCoord.xy / resolution;
+    fragColor = texture(imageTex, uv);
+  }`;
+  
+  // Create blit program
+  let blitProgram = null;
+  try {
+    blitProgram = twgl.createProgramInfo(gl, [vertexShaderSource, blitFragmentShader]);
+    console.log('Created blit program for final output');
+  } catch (error) {
+    console.error('Error creating blit program:', error);
+  }
 
   // Fullscreen quad (using different variable names to avoid conflict with common_script.js)
   const multipassArrays = {
@@ -102,7 +126,7 @@
     return formatMap[type] || formatMap['vec4'];
   }
 
-  // Function to create/recreate FBOs with current resolution
+  // Function to create/recreate FBOs with specified sizes
   function createFBOs() {
     // Clean up old FBOs
     for (const fbo of Object.values(fbos)) {
@@ -119,15 +143,18 @@
     }
     fbos = {};
     
-    // Get the actual rendering resolution from canvas
-    // This is already scaled by resolutionScale in resizeCanvas()
-    const width = canvas.width;
-    const height = canvas.height;
+    // Get resolution scale factor
+    {% if resolution_via_scale %}
+    const scale = uniformValues.resolutionScale || 1.0;
+    {% else %}
+    const scale = 1.0;
+    {% endif %}
     
-    // For each FBO spec, create the FBO(s)
+    // For each FBO spec, create the FBO(s) with specified dimensions * scale
     for (const [name, spec] of Object.entries(fboSpecs)) {
-      // All FBOs should match the canvas resolution
-      // (spec.width/height are ignored - they were just initial hints)
+      // Apply scale and clamp to safety limit
+      const width = Math.min(Math.floor(spec.width * scale), 2048);
+      const height = Math.min(Math.floor(spec.height * scale), 2048);
       const attachment = getFBOAttachment(spec.type);
       
       if (selfRefBuffers.includes(name)) {
@@ -153,9 +180,6 @@
     // Reset frame counter when recreating FBOs
     currentFrame = 0;
   }
-  
-  // Initial FBO creation
-  createFBOs();
 
   // Variables for loaded textures
   let loadedTextures = {};
@@ -281,7 +305,13 @@
       frameNum = 0;
     }
     currentFrame = 0;
+    resizeCanvasForMultipass();
     createFBOs();
+    {% if resolution_via_scale %}
+    if (typeof updateEffectiveResolution === 'function') {
+      updateEffectiveResolution();
+    }
+    {% endif %}
   };
   
   // Reset to defaults button (uniforms + shader)
@@ -304,7 +334,13 @@
       currentFrame = 0;
       
       // Recreate FBOs with default resolution
+      resizeCanvasForMultipass();
       createFBOs();
+      {% if resolution_via_scale %}
+      if (typeof updateEffectiveResolution === 'function') {
+        updateEffectiveResolution();
+      }
+      {% endif %}
     };
   }
   
@@ -321,23 +357,70 @@
     };
   }
   
-  // Handle resolution changes
-  const originalResizeCanvas = window.resizeCanvas;
-  window.resizeCanvas = function() {
-    if (originalResizeCanvas) originalResizeCanvas();
-    // Recreate FBOs when canvas size changes
-    createFBOs();
+  // Function to resize canvas - scale canvas with FBOs
+  function resizeCanvasForMultipass() {
+    {% if resolution_via_scale %}
+    const scale = uniformValues.resolutionScale || 1.0;
+    canvas.width = Math.min(Math.floor(finalOutputSize.width * scale), 2048);
+    canvas.height = Math.min(Math.floor(finalOutputSize.height * scale), 2048);
+    {% else %}
+    canvas.width = Math.min(finalOutputSize.width, 2048);
+    canvas.height = Math.min(finalOutputSize.height, 2048);
+    {% endif %}
+    
+    // Also update the canvas container size to match
+    const container = document.getElementById('canvas-container');
+    if (container) {
+      container.style.width = canvas.width + 'px';
+      container.style.height = canvas.height + 'px';
+    }
+    
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    console.log(`Canvas size (image): ${canvas.width}x${canvas.height}`);
+  }
+  
+  // Set initial canvas size
+  resizeCanvasForMultipass();
+  
+  // Create FBOs
+  createFBOs();
+  
+  {% if resolution_via_scale %}
+  // Override updateEffectiveResolution for multipass
+  window.updateEffectiveResolution = function() {
+    const effectiveRes = document.getElementById('effective_resolution');
+    if (effectiveRes) {
+      effectiveRes.textContent = `${canvas.width} × ${canvas.height}`;
+    }
   };
+  
+  // Update initial display
+  if (typeof updateEffectiveResolution === 'function') {
+    updateEffectiveResolution();
+  }
   
   // Handle resolution scale changes
   if (document.getElementById('resolutionScale')) {
-    const originalHandler = document.getElementById('resolutionScale').oninput;
-    document.getElementById('resolutionScale').oninput = function(e) {
-      if (originalHandler) originalHandler.call(this, e);
-      // Recreate FBOs when resolution scale changes
+    const resolutionScaleInput = document.getElementById('resolutionScale');
+    const originalScaleHandler = resolutionScaleInput.oninput;
+    
+    resolutionScaleInput.oninput = function(e) {
+      // Call original handler to update uniformValues
+      if (originalScaleHandler) {
+        originalScaleHandler.call(this, e);
+      }
+      
+      // Resize canvas and recreate FBOs with new scale
+      resizeCanvasForMultipass();
       createFBOs();
+      
+      // Update effective resolution display
+      if (typeof updateEffectiveResolution === 'function') {
+        updateEffectiveResolution();
+      }
     };
   }
+  {% endif %}
   {% endif %}
 
   function render(timeMs) {
@@ -356,29 +439,22 @@
     const time = timeMs * 0.001;
     uniformValues.time = time;
     
-    // Process each pass
+    // Process each pass (all render to FBOs)
     passes.forEach((pass, passIdx) => {
       // Figure out where to render to
       let targetFBO = null;
-      if (pass.output_FBO !== 'image') {
-        if (selfRefBuffers.includes(pass.output_FBO)) {
-          // Use current frame index to pick buffer
-          targetFBO = fbos[pass.output_FBO + '_' + (currentFrame % 2)];
-        } else {
-          targetFBO = fbos[pass.output_FBO];
-        }
+      if (selfRefBuffers.includes(pass.output_FBO)) {
+        // Use current frame index to pick buffer
+        targetFBO = fbos[pass.output_FBO + '_' + (currentFrame % 2)];
+      } else {
+        targetFBO = fbos[pass.output_FBO];
       }
 
-      // Bind target
+      // Bind target (all passes render to FBOs, including 'image')
       twgl.bindFramebufferInfo(gl, targetFBO);
       
-      // Set viewport (important when rendering to canvas)
-      if (!targetFBO) {
-        gl.viewport(0, 0, canvas.width, canvas.height);
-      }
-      
-      // Clear if not self-referencing OR if rendering to canvas
-      if (!selfRefBuffers.includes(pass.output_FBO) || pass.output_FBO === 'image') {
+      // Clear if not self-referencing
+      if (!selfRefBuffers.includes(pass.output_FBO)) {
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
       }
@@ -398,9 +474,8 @@
         {% endif %}
       };
       
-      // All FBOs have the same size as the canvas, so resolution is always [canvas.width, canvas.height]
-      // This ensures all shader passes use the same resolution value
-      uniforms.resolution = [canvas.width, canvas.height];
+      // Set resolution based on target FBO (all passes use FBO dimensions)
+      uniforms.resolution = [targetFBO.width, targetFBO.height];
 
       // Add input textures
       pass.input_FBOs.forEach(inputName => {
@@ -444,6 +519,24 @@
 
     // Increment frame counter for ping-pong
     currentFrame++;
+    
+    // Final blit: Copy the 'image' FBO to canvas
+    if (fbos['image'] && blitProgram) {
+      twgl.bindFramebufferInfo(gl, null);  // Bind canvas
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      
+      // Use the blit shader to copy FBO to canvas
+      gl.useProgram(blitProgram.program);
+      const blitUniforms = {
+        resolution: [canvas.width, canvas.height],
+        imageTex: fbos['image'].attachments[0]
+      };
+      twgl.setUniforms(blitProgram, blitUniforms);
+      twgl.setBuffersAndAttributes(gl, blitProgram, multipassBufferInfo);
+      twgl.drawBufferInfo(gl, multipassBufferInfo, gl.TRIANGLE_STRIP);
+    }
     
     requestAnimationFrame(render);
   }

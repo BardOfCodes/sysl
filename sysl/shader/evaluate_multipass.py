@@ -50,6 +50,7 @@ posttrace_map = {
     "v2": "mainImage_post_trace_v2",
     "v3": "mainImage_post_trace_v3",
     "v4": "mainImage_post_trace_v4",
+    "v4_AA": "mainImage_post_trace_v4_AA",
 }
 def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr, 
                        settings: Dict[str, Any] | None = None, 
@@ -57,7 +58,8 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
                        primitive_editing_mode: bool=False,
                        prim_expr: gls.GLFunction | gls.GLExpr | None = None,
                        map_first_pass_smg: bool=True,
-                       post_process_shader: bool=None) -> type_union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
+                       post_process_shader: bool=None,
+                       fxaa: bool=False) -> type_union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
     if settings is None:
         settings = DEFAULT_SETTINGS
 
@@ -69,6 +71,7 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
     render_mode = settings.get("render_mode", "v4")
     set_param_to_texture = settings.get("set_param_to_texture", False)
 
+    AA = settings.get("variables", {}).get("_AA", 1)
     # ================ FIRST PASS ================
     global_sc = GlobalShaderContext()
     if map_first_pass_smg:
@@ -92,17 +95,26 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
         global_sc.uniforms.update(gc_prim.uniforms)
         
     global_sc.resolve_codebook()
-    global_sc.add_shader_module("main_sdf_trace")
+    if AA > 1:
+        global_sc.add_shader_module("main_sdf_trace_AA")
+    else:
+        global_sc.add_shader_module("main_sdf_trace")
     shader_code = global_sc.emit_shader_code(settings, version="sdf_trace")
     uniforms = global_sc.get_uniforms()
     textures = global_sc.get_textures()
     
+    cur_res = uniforms['resolution']['init_value']
+    width = cur_res[0]  * AA
+    height = cur_res[1] * AA
+    
+    # uniforms['resolution']['init_value'] = (width, height)
+
     shader_bundle = {
         "shader_code": shader_code,
         "uniforms": uniforms,
         "textures": textures,
         "input_FBOs": [],
-        "output_FBO": {"name": "distance_travelled", "width": 512, "height": 512, "type": "vec2"}
+        "output_FBO": {"name": "distance_travelled", "width": width, "height": height, "type": "vec2"}
     }
     all_shader_bundles.append(shader_bundle)
     all_global_sc.append(global_sc)
@@ -131,13 +143,15 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
         global_sc = rec_shader_eval(expression, global_sc=global_sc)
     if primitive_editing_mode:
         global_sc.uniforms.update(gc_prim.uniforms)
-        
     global_sc.resolve_codebook() 
     if render_mode in ["v1", "v2"]:
         global_sc.add_shader_module(posttrace_map[render_mode])
     elif render_mode in ["v3", "v4"]:
         global_sc.resolve_material_stack(version=render_mode)
-        global_sc.add_shader_module(posttrace_map[render_mode])
+        if AA > 1:
+            global_sc.add_shader_module(posttrace_map[render_mode + "_AA"])
+        else:
+            global_sc.add_shader_module(posttrace_map[render_mode])
     else:
         raise ValueError(f"Invalid render mode: {render_mode}")
     
@@ -145,13 +159,18 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
     uniforms = global_sc.get_uniforms()
     textures = global_sc.get_textures()
     
+    cur_res = uniforms['resolution']['init_value']
+    width_2 = cur_res[0] * AA
+    height_2 = cur_res[1] * AA
+    # uniforms['resolution']['init_value'] = (width_2, height_2)
+    
     output_name = "intermediate_image"
     shader_bundle = {
         "shader_code": shader_code,
         "uniforms": uniforms,
         "textures": textures,
-        "input_FBOs": [{"name": "distance_travelled", "width": 512, "height": 512, "type": "vec2"}],
-        "output_FBO": {"name": output_name, "width": 512, "height": 512, "type": "vec4"}
+        "input_FBOs": [{"name": "distance_travelled", "width": width, "height": height, "type": "vec2"}],
+        "output_FBO": {"name": output_name, "width": width_2, "height": height_2, "type": "vec4"}
     }
     all_shader_bundles.append(shader_bundle)
     all_global_sc.append(global_sc)
@@ -159,32 +178,42 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
     # ================ THIRD PASS ================
     # TBD -> Do this also with an expression to do proper chaining.
     if post_process_shader:
+        nhbd = settings.get("variables", {}).get("outline_nhbd", 1)
         for shader_name in post_process_shader:
-            if shader_name == "part_outline":
-                outline_amount = 0.8
-                shader_code = imfx_shaders.PART_OUTLINE_SHADER.substitute(outline_amount=outline_amount)
-                input_FBOs = [{"name": "distance_travelled", "width": 512, "height": 512, "type": "vec2"},
-                    {"name": output_name, "width": 512, "height": 512, "type": "vec4"}]
-            elif shader_name == "selection_highlight":
-                shader_code = imfx_shaders.SELECTION_HIGHLIGHT_SHADER.substitute()
-                input_FBOs = [{"name": "distance_travelled", "width": 512, "height": 512, "type": "vec2"},
-                    {"name": output_name, "width": 512, "height": 512, "type": "vec4"}]
-            else:
+            shader_code = imfx_shaders.lookup_map[shader_name].substitute(nhbd=nhbd)
+            input_FBOs = [{"name": "distance_travelled", "width": width_2, "height": height_2, "type": "vec2"},
+                {"name": output_name, "width": width_2, "height": height_2, "type": "vec4"}]
+            if not shader_name in imfx_shaders.lookup_map:
                 raise ValueError(f"Invalid post process shader: {shader_name}")
     else:
-        outline_amount = 1.0
-        shader_code = imfx_shaders.basic_third_pass.BASIC_THIRD_PASS_SHADER.substitute()
-        input_FBOs = [{"name": output_name, "width": 512, "height": 512, "type": "vec4"}]
+        shader_code = imfx_shaders.basic_third_pass.BASIC_THIRD_PASS_SHADER.substitute(nhbd=nhbd)
+        input_FBOs = [{"name": output_name, "width": width_2, "height": height_2, "type": "vec4"}]
+    
+    if AA > 1:
+        output_name = "image_AA"
+    else:
+        output_name = "image"
     shader_bundle = {
         "shader_code": shader_code,
         "uniforms": {},
         "textures": {},
         "input_FBOs": input_FBOs,
-        "output_FBO": {"name": "image", "width": 512, "height": 512, "type": "vec4"}
+        "output_FBO": {"name": output_name, "width": width_2, "height": height_2, "type": "vec4"}
     }
     all_shader_bundles.append(shader_bundle)
-    all_global_sc.append(global_sc)
 
+    if AA > 1:
+        # Add a final pass which merges the AA passes.
+        resolution = width_2 // AA
+        shader_code = imfx_shaders.fxaa.FXAA_SHADER.substitute(resolution=resolution)
+        shader_bundle = {
+            "shader_code": shader_code,
+            "uniforms": {},
+            "textures": {},
+            "input_FBOs":  [{"name": output_name, "width": width_2, "height": height_2, "type": "vec4"}],
+            "output_FBO": {"name": "image", "width": width_2 // AA, "height": height_2 // AA, "type": "vec4"}
+        }
+        all_shader_bundles.append(shader_bundle)
     if return_shader_context:
         return all_shader_bundles, all_global_sc
     else:
