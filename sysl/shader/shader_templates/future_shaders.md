@@ -94,6 +94,11 @@ https://www.shadertoy.com/view/WtGXWm
 
 https://www.shadertoy.com/view/4sVczV
 
+https://www.shadertoy.com/view/tl23Rm
+
+Ice Primitive: 
+https://www.shadertoy.com/view/MtGGz1
+
 
 # Also consider different Camera Controls. DOF effects.
 https://www.shadertoy.com/view/wtcGDj

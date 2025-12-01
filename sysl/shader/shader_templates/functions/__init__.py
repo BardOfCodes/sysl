@@ -9,5 +9,6 @@ for generating shader modules.
 from .combinators import *
 from .material_functions import *
 from .custom_functions import * 
-
+from .shader_functions_2d import *
+from .shader_functions_3d import *
 

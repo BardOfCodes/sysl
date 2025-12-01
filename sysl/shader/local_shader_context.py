@@ -94,7 +94,7 @@ class LocalShaderContext(ShaderModule):
 
     def resolve_code(self):
         res_type, recent_res = self.res_sdf_stack.pop()
-        assert res_type in ["vec2", "vec4", "float", "Material", "MATPoint"], "Expected vec2, vec4 or float in the codebook"
+        assert res_type in ["vec2", "vec4", "float", "Material", "MATPoint", "mat4"], "Expected vec2, vec4 or float in the codebook"
         assert len(self.res_sdf_stack) == 0, "Expected no sdf in the codebook"
         self.scene_expr_props['out_type'] = res_type
         self.add_codeline(f"return {recent_res};")

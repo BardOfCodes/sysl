@@ -95,7 +95,7 @@ def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr,
 
 
 @singledispatch
-def rec_shader_eval(expression: gls.GLFunction | gls.GLExpr, global_sc, *args, **kwargs):
+def rec_shader_eval(expression: gls.GLFunction | gls.GLExpr, global_sc, *args, **kwargs) -> GlobalShaderContext:
     raise NotImplementedError(f"No shader evaluation for {type(expression)}")
 
 solid_to_type_map = {
@@ -174,7 +174,7 @@ def eval_mat_solid_v3(expression: sls.MatSolidV3, global_sc, *args, **kwargs) ->
     return global_sc
 
 
-BOUNDED_SOLID_TEMPLATE = Template("""
+BOUNDED_SOLID_FLOAT_TEMPLATE = Template("""
 ${type} ${res_name};
 float ${res_name}_sdf = ${bounding_name}(${pos_latest});
 if (${res_name}_sdf < ${bound_threshold}) {
@@ -185,9 +185,20 @@ if (${res_name}_sdf < ${bound_threshold}) {
 }
 """)
 
+BOUNDED_SOLID_MIX_TEMPLATE = Template("""
+${type} ${res_name};
+float ${res_name}_sdf = ${bounding_name}(${pos_latest}).x;
+if (${res_name}_sdf < ${bound_threshold}) {
+    ${res_name} = ${inner_name}(${pos_latest});
+} else {
+    ${res_name} = ${type}(-1.0);
+    ${res_name}.x = ${res_name}_sdf;
+}
+""")
+
 
 @rec_shader_eval.register
-def eval_bounded_solid(expression: sls.BoundedSolid, global_sc, *args, **kwargs) -> GlobalShaderContext:
+def eval_bounded_solid(expression: sls.BoundedSolid, global_sc:GlobalShaderContext=None, *args, **kwargs) -> GlobalShaderContext:
     func_name = expression.__class__.__name__
     sdf_expr = expression.args[0]
     bounding_expr = expression.args[1]
@@ -203,6 +214,8 @@ def eval_bounded_solid(expression: sls.BoundedSolid, global_sc, *args, **kwargs)
     global_sc.push_codebook(bounding_name, SCENE_EXPR_PROPS)
     assert isinstance(bounding_expr, gls.GLFunction), "Bounding expression must be a GLFunction"
     global_sc = rec_shader_eval(bounding_expr, global_sc)
+    bounding_last_out = global_sc.local_sc.res_sdf_stack[-1]
+    bounding_last_out_type, bounding_last_out_name = bounding_last_out
     global_sc.resolve_codebook()
     global_sc.pop_codebook()
 
@@ -220,14 +233,25 @@ def eval_bounded_solid(expression: sls.BoundedSolid, global_sc, *args, **kwargs)
     pos_latest = global_sc.local_sc.pos_stack[-1]
     res_name = f"res_{global_sc.local_sc.res_sdf_count}"
     global_sc.local_sc.res_sdf_count += 1
-    code_line = BOUNDED_SOLID_TEMPLATE.substitute(
-        type=inner_type,
-        res_name=res_name,
-        bounding_name=bounding_name,
-        inner_name=inner_name,
-        pos_latest=pos_latest,
-        bound_threshold=bound_threshold
-    )
+    if bounding_last_out_type == "float":
+        code_line = BOUNDED_SOLID_FLOAT_TEMPLATE.substitute(
+            type=inner_type,
+            res_name=res_name,
+            bounding_name=bounding_name,
+            inner_name=inner_name,
+            pos_latest=pos_latest,
+            bound_threshold=bound_threshold
+        )
+    else:
+        code_line = BOUNDED_SOLID_MIX_TEMPLATE.substitute(
+            type=inner_type,
+            res_name=res_name,
+            bounding_name=bounding_name,
+            inner_name=inner_name,
+            pos_latest=pos_latest,
+            bound_threshold=bound_threshold
+        )
+
     for line in code_line.split("\n"):
         global_sc.local_sc.add_codeline(line)
     global_sc.local_sc.add_dependency(bounding_name)
@@ -243,14 +267,14 @@ def eval_prim_sdf(expression: PRIM_TYPE, global_sc, *args, **kwargs) -> GlobalSh
     params = expression.args
     shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
     # global_sc = PRIMITIVE_MAP[type(expression)](global_sc, *shader_params)
-    box_param = ",".join(shader_params)
+    primitive_param = ",".join(shader_params)
     cur_pos = global_sc.local_sc.pos_stack.pop()
     func_name = expression.__class__.__name__
     sdf_name = f"sdf_{global_sc.local_sc.res_sdf_count}"
     global_sc.local_sc.res_sdf_count += 1
     # GLSL code for sphere (sphere_param[0] is the vec4 sphere parameters)
     if len(shader_params) >= 1:
-        code_line = f"float {sdf_name} = {func_name}({cur_pos}, {box_param});"
+        code_line = f"float {sdf_name} = {func_name}({cur_pos}, {primitive_param});"
     else:
         code_line = f"float {sdf_name} = {func_name}({cur_pos});"
     global_sc.local_sc.add_codeline(code_line)
@@ -261,7 +285,7 @@ def eval_prim_sdf(expression: PRIM_TYPE, global_sc, *args, **kwargs) -> GlobalSh
 
 
 @rec_shader_eval.register
-def eval_encoded_sdf_grid_3d(expression: type_union[sls.EncodedSDFGrid3D, sls.AABBEncodedSDFGrid3D], global_sc, *args, **kwargs) -> GlobalShaderContext:
+def eval_encoded_sdf_grid_3d(expression: type_union[sls.EncodedSDFGrid3D, sls.AABBEncodedSDFGrid3D], global_sc:GlobalShaderContext=None, *args, **kwargs) -> GlobalShaderContext:
     # basic version
     params = expression.args
     shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
@@ -367,12 +391,16 @@ def eval_mod(expression: MOD_TYPE, global_sc, *args, **kwargs) -> GlobalShaderCo
     # This is a hack unclear how to deal with other types)
     func_name = expression.__class__.__name__
     assert isinstance(sub_expr, (gls.GLFunction, gls.GLExpr)), "Sub expression must be a GLFunction or GLExpr"
+    if isinstance(expression, gls.Modifier2D):
+        new_pos_type = "vec2"
+    else:
+        new_pos_type = "vec3"
     if isinstance(expression, TRANSFORM_TYPE):
         cur_pos = global_sc.local_sc.pos_stack.pop()
         global_sc.local_sc.pos_count += 1
         new_pos_count = global_sc.local_sc.pos_count
         new_pos = f"pos_{new_pos_count}"
-        code_line = f"vec3 {new_pos} = {func_name}({cur_pos}, {shader_params});"
+        code_line = f"{new_pos_type} {new_pos} = {func_name}({cur_pos}, {shader_params});"
         global_sc.local_sc.add_codeline(code_line)
         global_sc.local_sc.add_dependency(func_name)
         global_sc.add_shader_module(func_name)
@@ -397,7 +425,7 @@ def eval_mod(expression: MOD_TYPE, global_sc, *args, **kwargs) -> GlobalShaderCo
         global_sc.local_sc.pos_count += 1
         new_pos_count = global_sc.local_sc.pos_count
         new_pos = f"pos_{new_pos_count}"
-        code_line = f"vec3 {new_pos} = {func_name}({cur_pos}, {shader_params});"
+        code_line = f"{new_pos_type} {new_pos} = {func_name}({cur_pos}, {shader_params});"
         global_sc.local_sc.add_codeline(code_line)
         global_sc.local_sc.add_dependency(func_name)
         global_sc.add_shader_module(func_name)

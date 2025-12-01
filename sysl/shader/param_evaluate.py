@@ -64,6 +64,9 @@ def recursive_parse_param(expression, params, global_sc: GlobalShaderContext):
             processed_param = f"{param}"
             shader_params.append(processed_param)
         elif isinstance(param, (gls.VecList)):
+            # Note: This is okay as the list is going to be a compile time constant. 
+            # Therefore, declaring it in the main function will generally be okay 
+            # (as long as functions taking it as input also have fixed sizes predefined)
             vector_list, n_vecs = param.args
             under_params = vector_list
             under_expression = param
@@ -157,23 +160,25 @@ def param_primitive_process(param):
         # Denest
         if len(param) == 0:
             if isinstance(param, sp.Integer):
-                param = f"{float(param):.10g}"
+                param = f"{float(param)}"
             shader_line = f"{param}"
         else:
             if isinstance(param[0], sp.Tuple):
                 param = tuple(x for sub in param for x in sub)
         if len(param) == 1:
             if isinstance(param[0], sp.Integer):
-                param = [f"{float(param[0]):.10g}"]
+                param = [f"{float(param[0])}"]
+            elif isinstance(param[0], str):
+                param = [f"{float(int(param[0]))}"]
             shader_line = f"{param[0]}"
         elif len(param) == 2:
-            shader_line = f"vec2({float(param[0]):.10g}, {float(param[1]):.10g})"
+            shader_line = f"vec2({float(param[0])}, {float(param[1])})"
         elif len(param) == 3:
-            shader_line = f"vec3({float(param[0]):.10g}, {float(param[1]):.10g}, {float(param[2]):.10g})"
+            shader_line = f"vec3({float(param[0])}, {float(param[1])}, {float(param[2])})"
         elif len(param) == 4:
-            shader_line = f"vec4({float(param[0]):.10g}, {float(param[1]):.10g}, {float(param[2]):.10g}, {float(param[3]):.10g})"
+            shader_line = f"vec4({float(param[0])}, {float(param[1])}, {float(param[2])}, {float(param[3])})"
         elif len(param) == 16:
-            shader_line = f"mat4({float(param[0]):.10g}, {float(param[1]):.10g}, {float(param[2]):.10g}, {float(param[3]):.10g}, {float(param[4]):.10g}, {float(param[5]):.10g}, {float(param[6]):.10g}, {float(param[7]):.10g}, {float(param[8]):.10g}, {float(param[9]):.10g}, {float(param[10]):.10g}, {float(param[11]):.10g}, {float(param[12]):.10g}, {float(param[13]):.10g}, {float(param[14]):.10g}, {float(param[15]):.10g})"
+            shader_line = f"mat4({float(param[0])}, {float(param[1])}, {float(param[2])}, {float(param[3])}, {float(param[4])}, {float(param[5])}, {float(param[6])}, {float(param[7])}, {float(param[8])}, {float(param[9])}, {float(param[10])}, {float(param[11])}, {float(param[12])}, {float(param[13])}, {float(param[14])}, {float(param[15])})"
         else:
             raise NotImplementedError
     else:

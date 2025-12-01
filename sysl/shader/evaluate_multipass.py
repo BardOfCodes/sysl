@@ -36,7 +36,7 @@ import sysl.symbolic as sls
 from .global_shader_context import GlobalShaderContext
 from .local_shader_context import SCENE_EXPR_PROPS, LocalShaderContext,MATERIAL_EXPR_PROPS
 from .param_evaluate import _inline_parse_param_from_expr
-from .evaluate import DEFAULT_SETTINGS, DEFAULT_BOUND_THRESHOLD, BOUNDED_SOLID_TEMPLATE
+from .evaluate import DEFAULT_SETTINGS, DEFAULT_BOUND_THRESHOLD, BOUNDED_SOLID_FLOAT_TEMPLATE, BOUNDED_SOLID_MIX_TEMPLATE
 from .evaluate import (eval_encoded_sdf_grid_3d as eval_encoded_sdf_grid_3d_v1, 
                        eval_prim_sdf as eval_prim_sdf_v1,
                        eval_sdf_grid_3d as eval_sdf_grid_3d_v1)
@@ -176,52 +176,113 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
     all_global_sc.append(global_sc)
     
     # ================ THIRD PASS ================
-    # TBD -> Do this also with an expression to do proper chaining.
-    if post_process_shader:
-        nhbd = settings.get("variables", {}).get("outline_nhbd", 1)
-        for shader_name in post_process_shader:
-            shader_code = imfx_shaders.lookup_map[shader_name].substitute(nhbd=nhbd)
-            input_FBOs = [{"name": "distance_travelled", "width": width_2, "height": height_2, "type": "vec2"},
-                {"name": output_name, "width": width_2, "height": height_2, "type": "vec4"}]
-            if not shader_name in imfx_shaders.lookup_map:
-                raise ValueError(f"Invalid post process shader: {shader_name}")
-    else:
-        shader_code = imfx_shaders.basic_third_pass.BASIC_THIRD_PASS_SHADER.substitute(nhbd=nhbd)
-        input_FBOs = [{"name": output_name, "width": width_2, "height": height_2, "type": "vec4"}]
-    
-    if AA > 1:
-        output_name = "image_AA"
-    else:
-        output_name = "image"
-    shader_bundle = {
-        "shader_code": shader_code,
-        "uniforms": {},
-        "textures": {},
-        "input_FBOs": input_FBOs,
-        "output_FBO": {"name": output_name, "width": width_2, "height": height_2, "type": "vec4"}
-    }
-    all_shader_bundles.append(shader_bundle)
+    third_bundle, output_name = create_third_pass_shader_bundle(
+        settings, width_2, height_2, output_name,
+        post_process_shader=post_process_shader, AA=AA
+    )
+    all_shader_bundles.append(third_bundle)
 
-    if AA > 1:
-        # Add a final pass which merges the AA passes.
-        resolution = width_2 // AA
-        shader_code = imfx_shaders.fxaa.FXAA_SHADER.substitute(resolution=resolution)
-        shader_bundle = {
-            "shader_code": shader_code,
-            "uniforms": {},
-            "textures": {},
-            "input_FBOs":  [{"name": output_name, "width": width_2, "height": height_2, "type": "vec4"}],
-            "output_FBO": {"name": "image", "width": width_2 // AA, "height": height_2 // AA, "type": "vec4"}
-        }
-        all_shader_bundles.append(shader_bundle)
+    # ================ FOURTH PASS (AA) ================
+    aa_bundle = create_aa_pass_shader_bundle(width_2, height_2, AA, output_name)
+    if aa_bundle:
+        all_shader_bundles.append(aa_bundle)
     if return_shader_context:
         return all_shader_bundles, all_global_sc
     else:
         return all_shader_bundles
 
 
+def create_third_pass_shader_bundle(settings: Dict[str, Any], 
+                                     width: int, 
+                                     height: int, 
+                                     input_image_name: str,
+                                     post_process_shader: list | None = None,
+                                     AA: int = 1,
+                                     include_distance_texture: bool = True) -> Tuple[Dict[str, Any], str]:
+    """
+    Create the third pass shader bundle for post-processing.
+    
+    Args:
+        settings: Settings dictionary containing variables like outline_nhbd
+        width: Width of the input/output FBOs
+        height: Height of the input/output FBOs
+        input_image_name: Name of the input image FBO (e.g., "intermediate_image")
+        post_process_shader: List of post-process shader names, or None for basic pass
+        AA: Anti-aliasing factor (1 = no AA)
+        include_distance_texture: Whether to include distance_travelled as input FBO
+        
+    Returns:
+        Tuple of (shader_bundle, output_name)
+    """
+    nhbd = settings.get("variables", {}).get("outline_nhbd", 1)
+    
+    if post_process_shader:
+        for shader_name in post_process_shader:
+            if shader_name not in imfx_shaders.lookup_map:
+                raise ValueError(f"Invalid post process shader: {shader_name}")
+            shader_code = imfx_shaders.lookup_map[shader_name].substitute(nhbd=nhbd)
+            if include_distance_texture:
+                input_FBOs = [
+                    {"name": "distance_travelled", "width": width, "height": height, "type": "vec2"},
+                    {"name": input_image_name, "width": width, "height": height, "type": "vec4"}
+                ]
+            else:
+                input_FBOs = [{"name": input_image_name, "width": width, "height": height, "type": "vec4"}]
+    else:
+        shader_code = imfx_shaders.basic_third_pass.BASIC_THIRD_PASS_SHADER.substitute(nhbd=nhbd)
+        input_FBOs = [{"name": input_image_name, "width": width, "height": height, "type": "vec4"}]
+    
+    if AA > 1:
+        output_name = "image_AA"
+    else:
+        output_name = "image"
+    
+    shader_bundle = {
+        "shader_code": shader_code,
+        "uniforms": {},
+        "textures": {},
+        "input_FBOs": input_FBOs,
+        "output_FBO": {"name": output_name, "width": width, "height": height, "type": "vec4"}
+    }
+    
+    return shader_bundle, output_name
+
+
+def create_aa_pass_shader_bundle(width: int, 
+                                  height: int, 
+                                  AA: int,
+                                  input_image_name: str = "image_AA") -> Dict[str, Any] | None:
+    """
+    Create the AA (anti-aliasing) pass shader bundle for downsampling.
+    
+    Args:
+        width: Width of the input FBO (AA-scaled)
+        height: Height of the input FBO (AA-scaled)
+        AA: Anti-aliasing factor
+        input_image_name: Name of the input image FBO (default "image_AA")
+        
+    Returns:
+        shader_bundle if AA > 1, otherwise None
+    """
+    if AA <= 1:
+        return None
+    
+    resolution = width // AA
+    shader_code = imfx_shaders.fxaa.FXAA_SHADER.substitute(resolution=resolution)
+    
+    shader_bundle = {
+        "shader_code": shader_code,
+        "uniforms": {},
+        "textures": {},
+        "input_FBOs": [{"name": input_image_name, "width": width, "height": height, "type": "vec4"}],
+        "output_FBO": {"name": "image", "width": width // AA, "height": height // AA, "type": "vec4"}
+    }
+    
+    return shader_bundle
+
+
 @singledispatch
-def rec_sdf_shader_eval(expression: gls.GLFunction | gls.GLExpr, global_sc):
+def rec_sdf_shader_eval(expression: gls.GLFunction | gls.GLExpr, global_sc) -> GlobalShaderContext:
     raise NotImplementedError(f"No shader evaluation for {type(expression)}")
 
 
@@ -277,6 +338,8 @@ def eval_bounded_solid(expression: sls.BoundedSolid, global_sc) -> GlobalShaderC
     assert isinstance(sdf_expr, gls.GLFunction), "SDF expression must be a GLFunction"
     global_sc = rec_sdf_shader_eval(sdf_expr, global_sc)
     inner_type, inner_sdf = global_sc.local_sc.res_sdf_stack[-1]  # type: ignore
+    bounding_last_out = global_sc.local_sc.res_sdf_stack[-1]
+    bounding_last_out_type, bounding_last_out_name = bounding_last_out
     global_sc.resolve_codebook()
     global_sc.pop_codebook()
 
@@ -285,14 +348,24 @@ def eval_bounded_solid(expression: sls.BoundedSolid, global_sc) -> GlobalShaderC
     pos_latest = global_sc.local_sc.pos_stack[-1]
     res_name = f"res_{global_sc.local_sc.res_sdf_count}"
     global_sc.local_sc.res_sdf_count += 1
-    code_line = BOUNDED_SOLID_TEMPLATE.substitute(
-        type=inner_type,
-        res_name=res_name,
-        bounding_name=bounding_name,
-        inner_name=inner_name,
-        pos_latest=pos_latest,
-        bound_threshold=bound_threshold
-    )
+    if bounding_last_out_type == "float":
+        code_line = BOUNDED_SOLID_FLOAT_TEMPLATE.substitute(
+            type=inner_type,
+            res_name=res_name,
+            bounding_name=bounding_name,
+            inner_name=inner_name,
+            pos_latest=pos_latest,
+            bound_threshold=bound_threshold
+        )
+    else:
+        code_line = BOUNDED_SOLID_MIX_TEMPLATE.substitute(
+            type=inner_type,
+            res_name=res_name,
+            bounding_name=bounding_name,
+            inner_name=inner_name,
+            pos_latest=pos_latest,
+            bound_threshold=bound_threshold
+        )
     for line in code_line.split("\n"):
         global_sc.local_sc.add_codeline(line)
     global_sc.local_sc.add_dependency(bounding_name)
@@ -303,7 +376,7 @@ def eval_bounded_solid(expression: sls.BoundedSolid, global_sc) -> GlobalShaderC
 
 
 @rec_sdf_shader_eval.register
-def eval_prim_sdf(expression: PRIM_TYPE, global_sc) -> GlobalShaderContext:
+def eval_prim_sdf(expression: gls.Primitive3D, global_sc) -> GlobalShaderContext:
     
     params = expression.args
     shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
@@ -328,6 +401,30 @@ def eval_prim_sdf(expression: PRIM_TYPE, global_sc) -> GlobalShaderContext:
     global_sc.local_sc.res_sdf_stack.append(("vec2", prim_name))
 
     return global_sc
+
+@rec_sdf_shader_eval.register
+def eval_prim_sdf(expression: gls.Primitive2D, global_sc) -> GlobalShaderContext:
+    # No Prim Id difference for 2D outputs. 
+    params = expression.args
+    shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
+    # global_sc = PRIMITIVE_MAP[type(expression)](global_sc, *shader_params)
+    box_param = ",".join(shader_params)
+    cur_pos = global_sc.local_sc.pos_stack.pop()
+    func_name = expression.__class__.__name__
+    sdf_name = f"sdf_{global_sc.local_sc.res_sdf_count}"
+    global_sc.local_sc.res_sdf_count += 1
+    # GLSL code for sphere (sphere_param[0] is the vec4 sphere parameters)
+    if len(shader_params) >= 1:
+        code_line = f"float {sdf_name} = {func_name}({cur_pos}, {box_param});"
+    else:
+        code_line = f"float {sdf_name} = {func_name}({cur_pos});"
+    global_sc.local_sc.add_codeline(code_line)
+    global_sc.local_sc.add_dependency(func_name)
+    global_sc.add_shader_module(func_name)
+    global_sc.local_sc.res_sdf_stack.append(("float", sdf_name))
+
+    return global_sc
+
  
 @rec_sdf_shader_eval.register
 def eval_encoded_sdf_grid_3d(expression: type_union[sls.EncodedSDFGrid3D, sls.AABBEncodedSDFGrid3D], global_sc) -> GlobalShaderContext:
@@ -393,12 +490,16 @@ def eval_mod(expression: MOD_TYPE, global_sc) -> GlobalShaderContext:
     # This is a hack unclear how to deal with other types)
     func_name = expression.__class__.__name__
     assert isinstance(sub_expr, (gls.GLFunction, gls.GLExpr)), "Sub expression must be a GLFunction or GLExpr"
+    if isinstance(expression, gls.Modifier2D):
+        new_pos_type = "vec2"
+    else:
+        new_pos_type = "vec3"
     if isinstance(expression, TRANSFORM_TYPE):
         cur_pos = global_sc.local_sc.pos_stack.pop()
         global_sc.local_sc.pos_count += 1
         new_pos_count = global_sc.local_sc.pos_count
         new_pos = f"pos_{new_pos_count}"
-        code_line = f"vec3 {new_pos} = {func_name}({cur_pos}, {shader_params});"
+        code_line = f"{new_pos_type} {new_pos} = {func_name}({cur_pos}, {shader_params});"
         global_sc.local_sc.add_codeline(code_line)
         global_sc.local_sc.add_dependency(func_name)
         global_sc.add_shader_module(func_name)
@@ -423,7 +524,7 @@ def eval_mod(expression: MOD_TYPE, global_sc) -> GlobalShaderContext:
         global_sc.local_sc.pos_count += 1
         new_pos_count = global_sc.local_sc.pos_count
         new_pos = f"pos_{new_pos_count}"
-        code_line = f"vec3 {new_pos} = {func_name}({cur_pos}, {shader_params});"
+        code_line = f"{new_pos_type} {new_pos} = {func_name}({cur_pos}, {shader_params});"
         global_sc.local_sc.add_codeline(code_line)
         global_sc.local_sc.add_dependency(func_name)
         global_sc.add_shader_module(func_name)
