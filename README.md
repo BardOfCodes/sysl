@@ -1,4 +1,34 @@
 # SySL: Symbolic Scene Language
+## December 1:
+
+Release goals: 
+
+1. This repo should support: 
+    1. Geometric expression -> interactive visualizer (twgl)
+    2. Geometric Expression -> interactive editor (twgl)
+    3. Geometric Expression -> modernGL based offline render. 
+
+2. The kinds of renderers: 
+    1. V1 is Inigo's Simple Renderer. 
+    2. V2 is Inigo Simple + color. 
+    3. V3 is Matthieu Jaquemet https://www.shadertoy.com/view/3tKfDG
+    4. V4 is Ours. 
+    5. V5 is Toon Shader
+    6. V6 is PBR
+    7. V7 is Poisson.
+
+3. Geometry -> A lot of symbolic expressions for things - GeoLIPI + MXG + eventually SW 2D patterns for materials. 
+
+
+1. Render your implicits without going to meshes for paper ready quality renders. 
+2. Check SDF field more easily by slicing the expression online with planes. 
+3. Render target Voxels with grid lines cleanly. 
+4. Create dynamic 3D scenes for the web simply. 
+5. Record optimization and replay. 
+
+
+# Generate the renders. 
+
 
 ## Oct 18: 
 What should SYSL contain?
@@ -16,11 +46,6 @@ SySL
 
 # Applications: 
 
-1. Render your implicits without going to meshes for paper ready quality renders. 
-2. Check SDF field more easily by slicing the expression online with planes. 
-3. Render target Voxels with grid lines cleanly. 
-4. Create dynamic scenes for the web simply. 
-5. Record optimization and replay. 
 
 ## TODO
 
