@@ -1,5 +1,39 @@
+"""
+Common constants and configuration for shader generation.
+
+This module defines shared constants used across the shader generation system,
+including render modes, shader constants, and uniform definitions.
+"""
 
 import numpy as np
+
+
+# =============================================================================
+# Render Mode Constants
+# =============================================================================
+# These define the different rendering pipelines available in SySL.
+# Each mode uses different material representations and shading approaches.
+
+class RenderMode:
+    """Render mode identifiers for shader generation."""
+    V1 = "v1"  # Basic SDF with simple material (float)
+    V2 = "v2"  # SDF with vec4 material data
+    V3 = "v3"  # SDF with material index reference (deferred material lookup)
+    V4 = "v4"  # SDF with MATPoint material (recommended default)
+    V5 = "v5"  # Same as V4 (MATPoint)
+    V6 = "v6"  # Same as V2 (vec4)
+    
+    DEFAULT = V4
+    
+    @classmethod
+    def all_modes(cls):
+        """Return all valid render modes."""
+        return [cls.V1, cls.V2, cls.V3, cls.V4, cls.V5, cls.V6]
+
+
+# =============================================================================
+# GLSL Preliminaries
+# =============================================================================
 
 PRELIMINARIES = """
 """

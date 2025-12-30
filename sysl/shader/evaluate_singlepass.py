@@ -1,6 +1,21 @@
-"""Convert from SySL Expression to shader code."""
+"""
+Single-pass shader evaluation for SySL expressions.
 
-import glob
+This module provides the core evaluation logic for converting SySL symbolic
+expressions into GLSL shader code. It uses Python's singledispatch mechanism
+to recursively traverse expression trees and generate corresponding shader code.
+
+Key components:
+- evaluate_singlepass(): Main entry point for single-pass shader generation
+- rec_shader_eval: Singledispatch function handling different expression types
+- Support for primitives, combinators, transforms, materials (v1-v6)
+
+The generated shader code includes:
+- SDF (Signed Distance Field) evaluation functions
+- Material evaluation functions  
+- Main rendering loop with ray marching
+"""
+
 import sys
 import sympy as sp
 from typing import Dict, Any, Tuple, Union as type_union
@@ -10,7 +25,6 @@ if sys.version_info >= (3, 11):
     from functools import singledispatch
 else:
     from geolipi.torch_compute.patched_functools import singledispatch
-import geolipi.symbolic as gls
 from geolipi.symbolic.symbol_types import (
     MACRO_TYPE,
     MOD_TYPE,
@@ -31,17 +45,18 @@ import sysl.symbolic as sls
 from .global_shader_context import GlobalShaderContext
 from .local_shader_context import SCENE_EXPR_PROPS, MATERIAL_EXPR_PROPS, MATERIAL_EXPR_PROPS_V4
 from .param_evaluate import _inline_parse_param_from_expr
-from .utils.conversion import insert_solid_types
+from .shader_templates.common import RenderMode
+
 DEFAULT_BOUND_THRESHOLD = 0.02
 
-# TODO: change the names to be more descriptive.
+# Maps render mode to the corresponding mainImage shader module name
 main_image_map = {
-    "v1": "mainImage_v1",
-    "v2": "mainImage_v2",
-    "v3": "mainImage_v3",
-    "v4": "mainImage_v4",
-    "v6": "mainImage_v6",
-    "v5": "mainImage_v5",
+    RenderMode.V1: "mainImage_v1",
+    RenderMode.V2: "mainImage_v2",
+    RenderMode.V3: "mainImage_v3",
+    RenderMode.V4: "mainImage_v4",
+    RenderMode.V5: "mainImage_v5",
+    RenderMode.V6: "mainImage_v6",
 }
 
 # V1 -> Just a single expression.
@@ -53,29 +68,24 @@ def evaluate_singlepass(expression: gls.GLFunction | gls.GLExpr,
     extract_vars = settings.get("extract_vars", False)
     set_to_ubo = settings.get("set_to_ubo", False)
     set_param_to_texture = settings.get("set_param_to_texture", False)
-    render_mode = settings.get("render_mode", "v4")
+    render_mode = settings.get("render_mode", RenderMode.DEFAULT)
 
-    if insert_types:
-        expression = insert_solid_types(expression, render_mode)
         
     if set_param_to_texture:
         raise NotImplementedError("Setting parameters to texture is not implemented yet for single pass.")
 
     global_sc = GlobalShaderContext()
-    # How to use V3 here? ->
     if extract_vars:
         varnamed_expr, _, var_map_base = expression._get_varnamed_expr(exclude_uniforms=True)
         global_sc.create_var_map(var_map_base, set_to_ubo=set_to_ubo)
         global_sc = rec_shader_eval(varnamed_expr, global_sc=global_sc)
     else:
         global_sc = rec_shader_eval(expression, global_sc=global_sc)
-    global_sc.resolve_codebook() # This will finins ahd add the function.
-    # This should give a shader context with all the required modules. 
-    # and then based on settings we will load the settings. 
+    global_sc.resolve_codebook()  # This will finish and add the function.
 
-    if render_mode in ["v1", "v2", "v4", "v5", "v6"]:
+    if render_mode in [RenderMode.V1, RenderMode.V2, RenderMode.V4, RenderMode.V5, RenderMode.V6]:
         global_sc.add_shader_module(main_image_map[render_mode])
-    elif render_mode in ["v3"]:
+    elif render_mode == RenderMode.V3:
         global_sc.resolve_material_stack(version=render_mode)
         global_sc.add_shader_module(main_image_map[render_mode])
     else:
@@ -107,14 +117,20 @@ def eval_mat_solid(expression: sls.MatSolid, global_sc, *args, **kwargs) -> Glob
     material_expr = expression.args[1]
     func_name = expression.__class__.__name__
     func_type = solid_to_type_map[type(expression)]
-    assert isinstance(sdf_expr, gls.GLFunction) and isinstance(material_expr, gls.GLFunction), "SDF and Material must be GLFunctions"
+    assert isinstance(sdf_expr, gls.GLFunction) and isinstance(material_expr, gls.GLFunction), (
+        f"MatSolid requires GLFunction arguments, got SDF: {type(sdf_expr)}, Material: {type(material_expr)}"
+    )
     cur_pos = global_sc.local_sc.pos_stack[-1]
     global_sc = rec_shader_eval(sdf_expr, global_sc)
     global_sc = rec_shader_eval(material_expr, global_sc, cur_pos=cur_pos)
-    assert len(global_sc.local_sc.res_sdf_stack) > 0, "No SDF in the stack"
+    assert len(global_sc.local_sc.res_sdf_stack) > 0, (
+        f"SDF evaluation for {func_name} produced no result. Check inner expression."
+    )
     res_type, final_sdf = global_sc.local_sc.res_sdf_stack.pop()  # type: ignore
     valid_types = ["float", func_type]
-    assert res_type in valid_types, f"Invalid result type {res_type} for {func_name}"
+    assert res_type in valid_types, (
+        f"Invalid result type '{res_type}' for {func_name}. Expected one of: {valid_types}"
+    )
     final_material = global_sc.material_stack.pop()
     # Add it back to stack. 
     # This version only works in the basic version.
@@ -397,23 +413,25 @@ def eval_sdf_combinator(expression: COMBINATOR_TYPE, global_sc, *args, **kwargs)
     else:
         tree_branches, param_list = [], []
         tree_branches = [arg for arg in expression.args]
-    # the pos has to be copied
+    # Copy position for each child branch
     cur_pos = global_sc.local_sc.pos_stack.pop()
-    for child in tree_branches:
+    for i, child in enumerate(tree_branches):
         global_sc.local_sc.pos_stack.append(cur_pos)
-        assert isinstance(child, (gls.GLFunction, gls.GLExpr)), "Child must be a GLFunction or GLExpr"
-        global_sc = rec_shader_eval(child,
-            global_sc=global_sc,)
+        assert isinstance(child, (gls.GLFunction, gls.GLExpr)), (
+            f"Combinator {func_name} child {i} must be a GLFunction/GLExpr, got {type(child)}"
+        )
+        global_sc = rec_shader_eval(child, global_sc=global_sc)
     n_children = len(tree_branches)
-    # global_sc = COMBINATOR_MAP[type(expression)](global_sc, len(tree_branches), *param_list)
 
+    # Collect results from children in reverse order (stack is LIFO)
     children = [global_sc.local_sc.res_sdf_stack.pop() for _ in range(n_children)]
-    # reverse the children
     children = children[::-1]
     child_names = [child[1] for child in children]
     child_types = [child[0] for child in children]
-    # make sure they are all the same type.
-    assert all(child_type == child_types[0] for child_type in child_types), "All children must be the same type"
+    assert all(child_type == child_types[0] for child_type in child_types), (
+        f"Combinator {func_name} requires all children to have the same type. "
+        f"Got types: {child_types}"
+    )
     child_type = child_types[0]
     res_sdf_name = f"sdf_{global_sc.local_sc.res_sdf_count}"
     global_sc.local_sc.res_sdf_count += 1

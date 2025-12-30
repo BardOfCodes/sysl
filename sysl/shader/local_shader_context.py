@@ -1,3 +1,17 @@
+"""
+Local shader context for building individual shader functions.
+
+This module provides the LocalShaderContext class which manages the state
+for generating a single GLSL function during expression evaluation. It tracks:
+- Position stack (for coordinate transformations)
+- Result stack (for SDF values and types)
+- Code lines being accumulated
+- Dependencies on other shader modules
+
+LocalShaderContext is used within GlobalShaderContext to build functions like
+SCENE_EXPRESSION and material evaluation functions.
+"""
+
 from string import Template
 from .shader_module import ShaderModule
 from typing import List, Tuple
@@ -92,9 +106,18 @@ class LocalShaderContext(ShaderModule):
     def add_code(self, code):
         self.local_sc.append(code)
 
-    def resolve_code(self):
+    def resolve_code(self) -> None:
+        """Finalize the codebook by popping the final result and adding a return statement."""
         res_type, recent_res = self.res_sdf_stack.pop()
-        assert res_type in ["vec2", "vec4", "float", "Material", "MATPoint", "mat4"], "Expected vec2, vec4 or float in the codebook"
-        assert len(self.res_sdf_stack) == 0, "Expected no sdf in the codebook"
+        valid_types = ["vec2", "vec4", "float", "Material", "MATPoint", "mat4"]
+        assert res_type in valid_types, (
+            f"Invalid result type '{res_type}' in codebook '{self.name}'. "
+            f"Expected one of: {valid_types}"
+        )
+        assert len(self.res_sdf_stack) == 0, (
+            f"Unbalanced result stack in codebook '{self.name}': "
+            f"{len(self.res_sdf_stack)} extra results remaining. "
+            "This usually indicates mismatched push/pop operations."
+        )
         self.scene_expr_props['out_type'] = res_type
         self.add_codeline(f"return {recent_res};")

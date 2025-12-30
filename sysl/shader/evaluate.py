@@ -1,15 +1,21 @@
-# Make it simpler to evaluate geolipi expressions. 
+"""
+Main entry point for evaluating SySL expressions to shader code.
+
+This module provides a unified interface for converting symbolic expressions
+into GLSL shader code, supporting both single-pass and multi-pass rendering modes.
+"""
+
 from typing import Dict, Any, List
 import geolipi.symbolic as gls
 import sysl.symbolic as sls
 
-from .evaluate_singlepass import evaluate_to_shader
-from .evaluate_multipass import evaluate_to_multipass_shader
-
+from .evaluate_singlepass import evaluate_singlepass
+from .evaluate_multipass import evaluate_multipass
+from .shader_templates.common import RenderMode
 from .utils.conversion import convert_solid_types
 
 DEFAULT_SETTINGS = {
-    "render_mode": "v4",
+    "render_mode": RenderMode.DEFAULT,
     "variables": {
         "_ADD_FLOOR_PLANE": False,
         "_RAYCAST_MAX_STEPS": 200,
@@ -28,14 +34,14 @@ def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr,
 
     if settings is None:
         settings = DEFAULT_SETTINGS
-    render_mode = settings.get("render_mode", "v4")
+    render_mode = settings.get("render_mode", RenderMode.DEFAULT)
     if insert_types:
         expression = convert_solid_types(expression, render_mode)
     
     if mode == "singlepass":
-        shader_output = evaluate_to_shader(expression, settings, insert_types=insert_types)
+        shader_output = evaluate_singlepass(expression, settings, insert_types=insert_types)
     elif mode == "multipass":
-        shader_output = evaluate_to_multipass_shader(expression, settings, insert_types=insert_types)
+        shader_output = evaluate_multipass(expression, settings, insert_types=insert_types)
     else:
         raise ValueError(f"Invalid mode: {mode}")
 

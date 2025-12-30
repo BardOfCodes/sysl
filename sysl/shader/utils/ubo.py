@@ -3,6 +3,11 @@ UBO (Uniform Buffer Object) packing and management utilities.
 
 This module provides efficient packing of shader variables into UBO format,
 optimizing memory usage by grouping similar types together.
+
+WARNING: This module is not fully integrated or cleaned up. Some functions
+(e.g., create_var_map_with_param_to_texture) have incomplete signatures or
+are not properly tested. Use with caution and expect potential issues when
+using the param-to-texture functionality.
 """
 
 import base64

@@ -45,20 +45,14 @@ def eval_mat_solid(expression: type_union[sls.MatSolid, sls.MatSolidV3], global_
     func_type = "vec2"
     assert isinstance(sdf_expr, gls.GLFunction) and isinstance(material_expr, gls.GLFunction), "SDF and Material must be GLFunctions"
     global_sc = rec_sdf_shader_eval(sdf_expr, global_sc)
-    # From material only fetch index.
-    # global_sc = rec_sdf_shader_eval(material_expr, global_sc)
+    # In SDF-only trace, we skip material evaluation (handled in second pass)
     assert len(global_sc.local_sc.res_sdf_stack) > 0, "No SDF in the stack"
     res_type, final_sdf = global_sc.local_sc.res_sdf_stack.pop()  # type: ignore
     valid_types = ["float", func_type]
     assert res_type in valid_types, f"Invalid result type {res_type} for {func_name}"
-    # final_material = global_sc.material_stack.pop()
-    # Add it back to stack. 
-    # This version only works in the basic version.
     res_name = f"res_{global_sc.local_sc.res_sdf_count}"
     global_sc.local_sc.res_sdf_count += 1
     global_sc.local_sc.add_codeline(f"{func_type} {res_name} = {final_sdf};")
-    # global_sc.local_sc.add_dependency(func_name)
-    # global_sc.add_shader_module(func_name)
     global_sc.local_sc.res_sdf_stack.append((func_type, res_name))
     return global_sc
 
@@ -197,13 +191,11 @@ def eval_prim_sdf(expression: gls.Primitive3D, global_sc) -> GlobalShaderContext
     
     params = expression.args
     shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
-    # global_sc = PRIMITIVE_MAP[type(expression)](global_sc, *shader_params)
     box_param = ",".join(shader_params)
     cur_pos = global_sc.local_sc.pos_stack.pop()
     func_name = expression.__class__.__name__
     sdf_name = f"sdf_{global_sc.local_sc.res_sdf_count}"
     global_sc.local_sc.res_sdf_count += 1
-    # GLSL code for sphere (sphere_param[0] is the vec4 sphere parameters)
     if len(shader_params) >= 1:
         code_line = f"float {sdf_name} = {func_name}({cur_pos}, {box_param});"
     else:
@@ -220,17 +212,15 @@ def eval_prim_sdf(expression: gls.Primitive3D, global_sc) -> GlobalShaderContext
     return global_sc
 
 @rec_sdf_shader_eval.register
-def eval_prim_sdf(expression: gls.Primitive2D, global_sc) -> GlobalShaderContext:
-    # No Prim Id difference for 2D outputs. 
+def eval_prim_sdf_2d(expression: gls.Primitive2D, global_sc) -> GlobalShaderContext:
+    """Evaluate 2D primitives (no primitive ID tracking for 2D)."""
     params = expression.args
     shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
-    # global_sc = PRIMITIVE_MAP[type(expression)](global_sc, *shader_params)
     box_param = ",".join(shader_params)
     cur_pos = global_sc.local_sc.pos_stack.pop()
     func_name = expression.__class__.__name__
     sdf_name = f"sdf_{global_sc.local_sc.res_sdf_count}"
     global_sc.local_sc.res_sdf_count += 1
-    # GLSL code for sphere (sphere_param[0] is the vec4 sphere parameters)
     if len(shader_params) >= 1:
         code_line = f"float {sdf_name} = {func_name}({cur_pos}, {box_param});"
     else:
@@ -255,7 +245,7 @@ def eval_sdf_grid_3d(expression: type_union[gls.SDFGrid3D, sls.RGBGrid3D], globa
 
 @rec_sdf_shader_eval.register
 def eval_sdf_combinator(expression: COMBINATOR_TYPE, global_sc) -> GlobalShaderContext:
-    # it could be a argument tree, instead of this. 
+    """Evaluate SDF combinator expressions (Union, Intersection, Difference, etc.)."""
     func_name = expression.__class__.__name__
     if isinstance(expression, (gls.SmoothUnion, gls.SmoothIntersection, gls.SmoothDifference, sls.MatSmoothColorOnly)):
         tree_branches = [arg for arg in expression.args[:-1]]
@@ -263,18 +253,17 @@ def eval_sdf_combinator(expression: COMBINATOR_TYPE, global_sc) -> GlobalShaderC
     else:
         tree_branches, param_list = [], []
         tree_branches = [arg for arg in expression.args]
-    # the pos has to be copied
+    
+    # Copy position for each child branch
     cur_pos = global_sc.local_sc.pos_stack.pop()
     for child in tree_branches:
         global_sc.local_sc.pos_stack.append(cur_pos)
         assert isinstance(child, (gls.GLFunction, gls.GLExpr)), "Child must be a GLFunction or GLExpr"
-        global_sc = rec_sdf_shader_eval(child,
-            global_sc=global_sc,)
+        global_sc = rec_sdf_shader_eval(child, global_sc=global_sc)
     n_children = len(tree_branches)
-    # global_sc = COMBINATOR_MAP[type(expression)](global_sc, len(tree_branches), *param_list)
 
+    # Collect results from children in reverse order (stack is LIFO)
     children = [global_sc.local_sc.res_sdf_stack.pop() for _ in range(n_children)]
-    # reverse the children
     children = children[::-1]
     child_names = [child[1] for child in children]
     child_types = [child[0] for child in children]

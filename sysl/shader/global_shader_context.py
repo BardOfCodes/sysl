@@ -1,6 +1,20 @@
+"""
+Global shader context for managing shader generation state.
+
+This module provides the GlobalShaderContext class which maintains global state
+during shader code generation, including:
+- Shader module registry and dependency resolution
+- Uniform and constant variable management
+- Texture registry for 2D/3D textures
+- Variable linking via UBO or inline code
+- Topological sorting of shader modules for correct emission order
+
+The context coordinates between LocalShaderContext instances (for individual
+functions) and the overall shader assembly process.
+"""
 
 from collections import deque, defaultdict
-from typing import List, Dict, Set, Tuple  
+from typing import List, Dict, Set, Tuple, Any, Optional
 from string import Template
 import sympy as sp
 from .shader_module import SMMap, ShaderModule
@@ -70,28 +84,38 @@ void main(void)
 
 
 class GlobalShaderContext:
-    def __init__(self):
-        self.shader_modules = {}
-        self.uniforms = {}
-        self.constants = {}
-        self.local_sc = LocalShaderContext("SCENE_EXPRESSION", SCENE_EXPR_PROPS)
-        self.codebook_stack = []
-        self.custom_func_count = 0
-        self.material_stack = []
-        self.material_count = 0
-        self.material_registry = {}
-        self.texture_registry = {}
-        self.var_map = {}
-        self.var_map_base = {}
-        self.set_to_ubo = False
-        self.ubo_data = None
-        self.prim_count = 0
+    """
+    Global context for managing shader code generation state.
+    
+    Maintains shader modules, uniforms, constants, textures, and coordinates
+    the assembly of complete shader programs from symbolic expressions.
+    """
+    
+    def __init__(self) -> None:
+        self.shader_modules: Dict[str, ShaderModule] = {}
+        self.uniforms: Dict[str, Dict[str, Any]] = {}
+        self.constants: Dict[str, Tuple[str, Any]] = {}
+        self.local_sc: LocalShaderContext = LocalShaderContext("SCENE_EXPRESSION", SCENE_EXPR_PROPS)
+        self.codebook_stack: List[LocalShaderContext] = []
+        self.custom_func_count: int = 0
+        self.material_stack: List[str] = []
+        self.material_count: int = 0
+        self.material_registry: Dict[str, int] = {}
+        self.texture_registry: Dict[str, Dict[str, Any]] = {}
+        self.var_map: Dict[str, Dict[str, str]] = {}
+        self.var_map_base: Dict[str, Any] = {}
+        self.set_to_ubo: bool = False
+        self.ubo_data: Optional[Dict[str, Any]] = None
+        self.prim_count: int = 0
 
-    def add_texture(self, texture_data):
-        # pack the texture data. 
+    def add_texture(self, texture_data: Dict[str, Any]) -> None:
+        """Add a texture to the registry."""
         name = texture_data["name"]
         self.texture_registry[name] = texture_data
-    def create_var_map(self, var_map_base, set_to_ubo=False, set_param_to_texture=False):
+        
+    def create_var_map(self, var_map_base: Dict[str, Any], 
+                       set_to_ubo: bool = False, 
+                       set_param_to_texture: bool = False) -> None:
         """Create variable map and delegate UBO processing to UBO module."""
         self.var_map_base = var_map_base
         self.set_to_ubo = set_to_ubo
@@ -100,6 +124,7 @@ class GlobalShaderContext:
             raise ValueError("Cannot set both UBO and param to texture")
         if set_to_ubo:
             self.var_map, self.ubo_data = create_var_map_with_ubo(var_map_base)
+            
         if set_param_to_texture:
             self.var_map, texture_data = create_var_map_with_param_to_texture(var_map_base)
             self.add_texture(texture_data)
@@ -129,12 +154,12 @@ class GlobalShaderContext:
             self.param_texture_data = None
 
 
-    def get_textures(self):
+    def get_textures(self) -> Dict[str, Dict[str, Any]]:
+        """Return the texture registry."""
         return self.texture_registry
-    
 
-
-    def add_shader_module(self, module_name, *args, **kwargs):
+    def add_shader_module(self, module_name: str, *args: Any, **kwargs: Any) -> None:
+        """Add or update a shader module in the context."""
         if module_name not in self.shader_modules:
             module = SMMap[module_name]()
             module.set_config(*args, **kwargs)
@@ -143,7 +168,7 @@ class GlobalShaderContext:
             module = self.shader_modules[module_name]
             module.register_hit(self, *args, **kwargs)
     
-    def resolve_dependencies(self):
+    def resolve_dependencies(self) -> None:
         """Recursively resolve all dependencies for shader modules."""
         # Keep track of modules we need to process
         to_process = set(self.shader_modules.keys())
@@ -176,7 +201,7 @@ class GlobalShaderContext:
                 
                 processed.add(module_name)
     
-    def collect_variable_dependencies(self, settings):
+    def collect_variable_dependencies(self, settings: Dict[str, Any]) -> None:
         """Collect all variable dependencies from shader modules and populate constants/uniforms."""
         all_vardeps = set()
         var_settings = settings.get("variables", {})
@@ -205,6 +230,7 @@ class GlobalShaderContext:
         convert_uniforms_to_constants = settings.get("convert_uniforms_to_constants", False)
         if convert_uniforms_to_constants:
             self.convert_uniforms_to_constants()
+            
     def emit_constants(self) -> str:
         """Emit shader code to declare constants."""
         if not self.constants:
@@ -272,7 +298,7 @@ class GlobalShaderContext:
         code_lines.append("")  # Empty line for separation
         return "\n".join(code_lines)
     
-    def emit_varlinking(self, settings) -> Tuple[str, str]:
+    def emit_varlinking(self, settings: Dict[str, Any]) -> Tuple[str, str]:
         """
         Emit shader code to link variables using UBO module.
         
@@ -329,21 +355,22 @@ class GlobalShaderContext:
             raise ValueError("Circular dependency detected in shader modules")
         
         return result
-    def resolve_codebook(self):
-        # More Processing based on the sdf and pos stack. 
+    def resolve_codebook(self) -> None:
+        """Finalize the current codebook and add it as a shader module."""
         self.local_sc.resolve_code()
         codebook_module = self.local_sc.emit_shadermodule()
         self.shader_modules[self.local_sc.name] = codebook_module
 
-    def push_codebook(self, name, scene_expr_props):
+    def push_codebook(self, name: str, scene_expr_props: Dict[str, str]) -> None:
+        """Push current local context and create a new one for a nested function."""
         self.codebook_stack.append(self.local_sc)
         self.local_sc = LocalShaderContext(name, scene_expr_props)
 
-    def pop_codebook(self):
-        # Save certain information - 
+    def pop_codebook(self) -> None:
+        """Restore the previous local context from the stack."""
         self.local_sc = self.codebook_stack.pop()
 
-    def emit_shader_code(self, settings, version="default") -> str:
+    def emit_shader_code(self, settings: Dict[str, Any], version: str = "default") -> str:
         """Emit complete shader code including constants, uniforms, and modules."""
         # First resolve all dependencies
         self.resolve_dependencies()
@@ -409,7 +436,7 @@ class GlobalShaderContext:
             raise ValueError(f"Invalid version: {version}")
 
         return real_code
-    def get_uniforms(self):
+    def get_uniforms(self) -> Dict[str, Dict[str, Any]]:
         """Get uniforms including UBO data if available."""
         uniforms = self.uniforms.copy()
         
@@ -422,7 +449,8 @@ class GlobalShaderContext:
         
         return uniforms
     
-    def convert_uniforms_to_constants(self):
+    def convert_uniforms_to_constants(self) -> None:
+        """Convert all uniforms to constants for static compilation."""
         del_names = []
         for var_name, var_info in self.uniforms.items():
             value = var_info["init_value"]
@@ -433,10 +461,11 @@ class GlobalShaderContext:
         for var_name in del_names:
             del self.uniforms[var_name]
 
-    def get_shader_modules(self):
+    def get_shader_modules(self) -> Dict[str, ShaderModule]:
+        """Return all registered shader modules."""
         return self.shader_modules
 
-    def resolve_material_stack(self, version="v3"):
+    def resolve_material_stack(self, version: str = "v3") -> None:
         cases = []
         dependencies = []
         for mat_func_name, mat_index in self.material_registry.items():

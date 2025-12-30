@@ -1,8 +1,14 @@
 """
-# Idea: create multiple shader programs based on the type. 
-# The first one stores where the intersection happens. And with what primitive. 
-# The second one stores the material graph that it must execute given the distance. 
-# Additional passes then conduct sreen space operations like AA, outlining etc.
+Multi-pass shader evaluation for SySL expressions.
+
+Multi-pass rendering separates the rendering pipeline into distinct phases:
+1. First pass: SDF ray tracing to compute intersection distance and primitive ID
+2. Second pass: Material evaluation and shading at intersection points
+3. Third pass: Screen-space post-processing (outlines, dithering, etc.)
+4. Fourth pass (optional): Anti-aliasing downsampling
+
+This approach enables more complex rendering effects and better performance
+for certain scene configurations.
 """
 
 import sympy as sp
@@ -13,18 +19,19 @@ from .global_shader_context import GlobalShaderContext
 from .local_shader_context import SCENE_EXPR_PROPS
 from .param_evaluate import _inline_parse_param_from_expr
 from .shader_templates import imfx_shaders as imfx_shaders
+from .shader_templates.common import RenderMode
 from ..utils import recursive_sm_to_smg
 from .evaluate_singlepass import rec_shader_eval
 from .evaluate_shader_trace import rec_sdf_shader_eval
 
-# TODO: change the names to be more descriptive.
+# Maps render mode to the corresponding post-trace shader module name
 posttrace_map = {
-    "v1": "mainImage_post_trace_v1",
-    "v2": "mainImage_post_trace_v2",
-    "v3": "mainImage_post_trace_v3",
-    "v4": "mainImage_post_trace_v4",
-    "v5": "mainImage_post_trace_v5",
-    "v6": "mainImage_post_trace_v6",
+    RenderMode.V1: "mainImage_post_trace_v1",
+    RenderMode.V2: "mainImage_post_trace_v2",
+    RenderMode.V3: "mainImage_post_trace_v3",
+    RenderMode.V4: "mainImage_post_trace_v4",
+    RenderMode.V5: "mainImage_post_trace_v5",
+    RenderMode.V6: "mainImage_post_trace_v6",
 }
 def evaluate_multipass(expression: gls.GLFunction | gls.GLExpr, 
                        settings: Dict[str, Any] | None = None, 
@@ -36,7 +43,7 @@ def evaluate_multipass(expression: gls.GLFunction | gls.GLExpr,
 
     all_shader_bundles = []
     all_global_sc = []
-    render_mode = settings.get("render_mode", "v4")
+    render_mode = settings.get("render_mode", RenderMode.DEFAULT)
     extract_vars = settings.get("extract_vars", False)
     set_to_ubo = settings.get("set_to_ubo", False)
     set_param_to_texture = settings.get("set_param_to_texture", False)
@@ -70,10 +77,8 @@ def evaluate_multipass(expression: gls.GLFunction | gls.GLExpr,
     textures = global_sc.get_textures()
     
     cur_res = uniforms['resolution']['init_value']
-    width = cur_res[0]  * AA
+    width = cur_res[0] * AA
     height = cur_res[1] * AA
-    
-    # uniforms['resolution']['init_value'] = (width, height)
 
     shader_bundle = {
         "shader_code": shader_code,
@@ -87,7 +92,7 @@ def evaluate_multipass(expression: gls.GLFunction | gls.GLExpr,
 
     # ================ SECOND PASS ================
 
-    if render_mode in ["v3", "v4", "v5"]:
+    if render_mode in [RenderMode.V3, RenderMode.V4, RenderMode.V5]:
         global_sc = GlobalShaderContext()
         global_sc.push_codebook("GEOM_EXPRESSION", SCENE_EXPR_PROPS)
         if extract_vars:
@@ -96,7 +101,7 @@ def evaluate_multipass(expression: gls.GLFunction | gls.GLExpr,
             global_sc = rec_sdf_shader_eval(varnamed_expr, global_sc=global_sc)
         else:
             global_sc = rec_sdf_shader_eval(expression, global_sc=global_sc)
-        global_sc.resolve_codebook() # This will finins ahd add the function.
+        global_sc.resolve_codebook()  # This will finish and add the function.
         global_sc.push_codebook("SCENE_EXPRESSION", SCENE_EXPR_PROPS)
     else:
         global_sc = GlobalShaderContext()
@@ -110,7 +115,7 @@ def evaluate_multipass(expression: gls.GLFunction | gls.GLExpr,
         global_sc.uniforms.update(gc_prim.uniforms)
     global_sc.resolve_codebook() 
     
-    if render_mode in ["v3"]:
+    if render_mode == RenderMode.V3:
         global_sc.resolve_material_stack(version=render_mode)
     global_sc.add_shader_module(posttrace_map[render_mode], AA=AA)
     
@@ -121,7 +126,6 @@ def evaluate_multipass(expression: gls.GLFunction | gls.GLExpr,
     cur_res = uniforms['resolution']['init_value']
     width_2 = cur_res[0] * AA
     height_2 = cur_res[1] * AA
-    # uniforms['resolution']['init_value'] = (width_2, height_2)
     
     output_name = "intermediate_image"
     shader_bundle = {
@@ -249,14 +253,12 @@ def create_aa_pass_shader_bundle(width: int,
     
     resolution = width // AA
     shader_code = imfx_shaders.fxaa.fxaa_shader(AA).substitute(resolution=resolution)
-    # shader_code = imfx_shaders.basic_third_pass.BASIC_THIRD_PASS_SHADER.substitute({"input_name": input_image_name})
     shader_bundle = {
         "shader_code": shader_code,
         "uniforms": {},
         "textures": {},
         "input_FBOs": [{"name": input_image_name, "width": width, "height": height, "type": "vec4"}],
         "output_FBO": {"name": "image", "width": width // AA, "height": height // AA, "type": "vec4"}
-        # "output_FBO": {"name": "image", "width": width, "height": height, "type": "vec4"}
     }
     
     return shader_bundle

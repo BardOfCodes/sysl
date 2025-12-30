@@ -1,3 +1,19 @@
+"""
+Parameter evaluation and GLSL code generation for shader parameters.
+
+This module handles the conversion of symbolic expression parameters into
+GLSL code strings. It processes various parameter types including:
+- Primitive values (floats, integers, tuples/vectors)
+- Symbolic variables and their lookup table values
+- Uniform declarations (UniformFloat, UniformVec2, etc.)
+- Math operations (add, sub, mul, sin, cos, etc.)
+- Vector operations and component access
+
+The main function recursive_parse_param traverses parameter expressions and
+generates appropriate GLSL code while updating the shader context with any
+required uniforms.
+"""
+
 import sympy as sp
 from typing import Tuple, Any
 import geolipi.symbolic as gls
