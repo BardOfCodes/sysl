@@ -240,6 +240,34 @@
     requestAnimationFrame(render);
   }
 
+  // Function to resize canvas - scale canvas with FBOs (always needed)
+  function resizeCanvasForMultipass() {
+    {% if resolution_via_scale %}
+    const scale = uniformValues.resolutionScale || 1.0;
+    canvas.width = Math.min(Math.floor(finalOutputSize.width * scale), 2048);
+    canvas.height = Math.min(Math.floor(finalOutputSize.height * scale), 2048);
+    {% else %}
+    canvas.width = Math.min(finalOutputSize.width, 2048);
+    canvas.height = Math.min(finalOutputSize.height, 2048);
+    {% endif %}
+    
+    // Also update the canvas container size to match
+    const container = document.getElementById('canvas-container');
+    if (container) {
+      container.style.width = canvas.width + 'px';
+      container.style.height = canvas.height + 'px';
+    }
+    
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    console.log(`Canvas size (image): ${canvas.width}x${canvas.height}`);
+  }
+  
+  // Set initial canvas size (always needed)
+  resizeCanvasForMultipass();
+  
+  // Create FBOs (always needed)
+  createFBOs();
+
   {% if show_controls %}
   let isPlaying = true;
   let shouldStep = false;
@@ -356,34 +384,6 @@
       }
     };
   }
-  
-  // Function to resize canvas - scale canvas with FBOs
-  function resizeCanvasForMultipass() {
-    {% if resolution_via_scale %}
-    const scale = uniformValues.resolutionScale || 1.0;
-    canvas.width = Math.min(Math.floor(finalOutputSize.width * scale), 2048);
-    canvas.height = Math.min(Math.floor(finalOutputSize.height * scale), 2048);
-    {% else %}
-    canvas.width = Math.min(finalOutputSize.width, 2048);
-    canvas.height = Math.min(finalOutputSize.height, 2048);
-    {% endif %}
-    
-    // Also update the canvas container size to match
-    const container = document.getElementById('canvas-container');
-    if (container) {
-      container.style.width = canvas.width + 'px';
-      container.style.height = canvas.height + 'px';
-    }
-    
-    gl.viewport(0, 0, canvas.width, canvas.height);
-    console.log(`Canvas size (image): ${canvas.width}x${canvas.height}`);
-  }
-  
-  // Set initial canvas size
-  resizeCanvasForMultipass();
-  
-  // Create FBOs
-  createFBOs();
   
   {% if resolution_via_scale %}
   // Override updateEffectiveResolution for multipass

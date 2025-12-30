@@ -2,76 +2,46 @@
 # Idea: create multiple shader programs based on the type. 
 # The first one stores where the intersection happens. And with what primitive. 
 # The second one stores the material graph that it must execute given the distance. 
-# Can introduce a third one to do DOF.
-# Step one write the expr -> SDF shader program parser.
+# Additional passes then conduct sreen space operations like AA, outlining etc.
 """
 
-import sys
 import sympy as sp
 from typing import Dict, Any, Tuple, Union as type_union
 import geolipi.symbolic as gls
-from string import Template
-if sys.version_info >= (3, 11):
-    from functools import singledispatch
-else:
-    from geolipi.torch_compute.patched_functools import singledispatch
-import geolipi.symbolic as gls
-from geolipi.symbolic.symbol_types import (
-    MACRO_TYPE,
-    MOD_TYPE,
-    PRIM_TYPE,
-    COMBINATOR_TYPE,
-    TRANSFORM_TYPE,
-    POSITIONALMOD_TYPE,
-    SDFMOD_TYPE,
-    HIGHER_PRIM_TYPE,
-    COLOR_MOD,
-    APPLY_COLOR_TYPE,
-    SVG_COMBINATORS,
-    UNOPT_ALPHA,
-    EXPR_TYPE,
-    SUPERSET_TYPE
-)
 import sysl.symbolic as sls
 from .global_shader_context import GlobalShaderContext
-from .local_shader_context import SCENE_EXPR_PROPS, LocalShaderContext,MATERIAL_EXPR_PROPS
+from .local_shader_context import SCENE_EXPR_PROPS
 from .param_evaluate import _inline_parse_param_from_expr
-from .evaluate import DEFAULT_SETTINGS, DEFAULT_BOUND_THRESHOLD, BOUNDED_SOLID_FLOAT_TEMPLATE, BOUNDED_SOLID_MIX_TEMPLATE
-from .evaluate import (eval_encoded_sdf_grid_3d as eval_encoded_sdf_grid_3d_v1, 
-                       eval_prim_sdf as eval_prim_sdf_v1,
-                       eval_sdf_grid_3d as eval_sdf_grid_3d_v1)
-from .evaluate import rec_shader_eval
 from .shader_templates import imfx_shaders as imfx_shaders
 from ..utils import recursive_sm_to_smg
-# V1 -> Just ray trace and get to the sdf value. 
-# The 
+from .evaluate_singlepass import rec_shader_eval
+from .evaluate_shader_trace import rec_sdf_shader_eval
+
+# TODO: change the names to be more descriptive.
 posttrace_map = {
     "v1": "mainImage_post_trace_v1",
     "v2": "mainImage_post_trace_v2",
     "v3": "mainImage_post_trace_v3",
     "v4": "mainImage_post_trace_v4",
-    "v4_AA": "mainImage_post_trace_v4_AA",
+    "v5": "mainImage_post_trace_v5",
+    "v6": "mainImage_post_trace_v6",
 }
-def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr, 
+def evaluate_multipass(expression: gls.GLFunction | gls.GLExpr, 
                        settings: Dict[str, Any] | None = None, 
                        return_shader_context: bool=False,
                        primitive_editing_mode: bool=False,
                        prim_expr: gls.GLFunction | gls.GLExpr | None = None,
                        map_first_pass_smg: bool=True,
-                       post_process_shader: bool=None,
-                       fxaa: bool=False) -> type_union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
-    if settings is None:
-        settings = DEFAULT_SETTINGS
+                       post_process_shader: bool=None) -> type_union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]:
 
     all_shader_bundles = []
     all_global_sc = []
+    render_mode = settings.get("render_mode", "v4")
     extract_vars = settings.get("extract_vars", False)
     set_to_ubo = settings.get("set_to_ubo", False)
-
-    render_mode = settings.get("render_mode", "v4")
     set_param_to_texture = settings.get("set_param_to_texture", False)
-
     AA = settings.get("variables", {}).get("_AA", 1)
+
     # ================ FIRST PASS ================
     global_sc = GlobalShaderContext()
     if map_first_pass_smg:
@@ -83,7 +53,6 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
         global_sc.create_var_map(var_map_base, set_to_ubo=set_to_ubo, set_param_to_texture=set_param_to_texture)
         global_sc = rec_sdf_shader_eval(varnamed_expr, global_sc=global_sc)
     else:
-        # How to use V3 here? ->
         global_sc = rec_sdf_shader_eval(first_pass_expression, global_sc=global_sc)
 
 
@@ -95,10 +64,7 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
         global_sc.uniforms.update(gc_prim.uniforms)
         
     global_sc.resolve_codebook()
-    if AA > 1:
-        global_sc.add_shader_module("main_sdf_trace_AA")
-    else:
-        global_sc.add_shader_module("main_sdf_trace")
+    global_sc.add_shader_module("main_sdf_trace", AA=AA)
     shader_code = global_sc.emit_shader_code(settings, version="sdf_trace")
     uniforms = global_sc.get_uniforms()
     textures = global_sc.get_textures()
@@ -114,14 +80,14 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
         "uniforms": uniforms,
         "textures": textures,
         "input_FBOs": [],
-        "output_FBO": {"name": "distance_travelled", "width": width, "height": height, "type": "vec2"}
+        "output_FBO": {"name": "distance_travelled", "width": width, "height": height, "type": "vec4"}
     }
     all_shader_bundles.append(shader_bundle)
     all_global_sc.append(global_sc)
 
     # ================ SECOND PASS ================
 
-    if render_mode in ["v3", "v4"]:
+    if render_mode in ["v3", "v4", "v5"]:
         global_sc = GlobalShaderContext()
         global_sc.push_codebook("GEOM_EXPRESSION", SCENE_EXPR_PROPS)
         if extract_vars:
@@ -132,7 +98,6 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
             global_sc = rec_sdf_shader_eval(expression, global_sc=global_sc)
         global_sc.resolve_codebook() # This will finins ahd add the function.
         global_sc.push_codebook("SCENE_EXPRESSION", SCENE_EXPR_PROPS)
-        
     else:
         global_sc = GlobalShaderContext()
 
@@ -144,16 +109,10 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
     if primitive_editing_mode:
         global_sc.uniforms.update(gc_prim.uniforms)
     global_sc.resolve_codebook() 
-    if render_mode in ["v1", "v2"]:
-        global_sc.add_shader_module(posttrace_map[render_mode])
-    elif render_mode in ["v3", "v4"]:
+    
+    if render_mode in ["v3"]:
         global_sc.resolve_material_stack(version=render_mode)
-        if AA > 1:
-            global_sc.add_shader_module(posttrace_map[render_mode + "_AA"])
-        else:
-            global_sc.add_shader_module(posttrace_map[render_mode])
-    else:
-        raise ValueError(f"Invalid render mode: {render_mode}")
+    global_sc.add_shader_module(posttrace_map[render_mode], AA=AA)
     
     shader_code = global_sc.emit_shader_code(settings, version="post_sdf_trace")
     uniforms = global_sc.get_uniforms()
@@ -169,18 +128,18 @@ def evaluate_to_multipass_shader(expression: gls.GLFunction | gls.GLExpr,
         "shader_code": shader_code,
         "uniforms": uniforms,
         "textures": textures,
-        "input_FBOs": [{"name": "distance_travelled", "width": width, "height": height, "type": "vec2"}],
+        "input_FBOs": [{"name": "distance_travelled", "width": width, "height": height, "type": "vec4"}],
         "output_FBO": {"name": output_name, "width": width_2, "height": height_2, "type": "vec4"}
     }
     all_shader_bundles.append(shader_bundle)
     all_global_sc.append(global_sc)
     
     # ================ THIRD PASS ================
-    third_bundle, output_name = create_third_pass_shader_bundle(
+    third_bundles, output_name = create_third_pass_shader_bundle(
         settings, width_2, height_2, output_name,
         post_process_shader=post_process_shader, AA=AA
     )
-    all_shader_bundles.append(third_bundle)
+    all_shader_bundles.extend(third_bundles)
 
     # ================ FOURTH PASS (AA) ================
     aa_bundle = create_aa_pass_shader_bundle(width_2, height_2, AA, output_name)
@@ -214,38 +173,59 @@ def create_third_pass_shader_bundle(settings: Dict[str, Any],
     Returns:
         Tuple of (shader_bundle, output_name)
     """
-    nhbd = settings.get("variables", {}).get("outline_nhbd", 1)
-    
-    if post_process_shader:
-        for shader_name in post_process_shader:
-            if shader_name not in imfx_shaders.lookup_map:
-                raise ValueError(f"Invalid post process shader: {shader_name}")
-            shader_code = imfx_shaders.lookup_map[shader_name].substitute(nhbd=nhbd)
-            if include_distance_texture:
-                input_FBOs = [
-                    {"name": "distance_travelled", "width": width, "height": height, "type": "vec2"},
-                    {"name": input_image_name, "width": width, "height": height, "type": "vec4"}
-                ]
-            else:
-                input_FBOs = [{"name": input_image_name, "width": width, "height": height, "type": "vec4"}]
-    else:
-        shader_code = imfx_shaders.basic_third_pass.BASIC_THIRD_PASS_SHADER.substitute(nhbd=nhbd)
-        input_FBOs = [{"name": input_image_name, "width": width, "height": height, "type": "vec4"}]
+    if post_process_shader is None:
+        post_process_shader = []
+    post_fx_args = dict(
+        nhbd=settings.get("variables", {}).get("outline_nhbd", 1),
+        dither_intensity_factor=settings.get("variables", {}).get("DITHER_INTENSITY_FACTOR", 0.5),
+    )
     
     if AA > 1:
         output_name = "image_AA"
     else:
         output_name = "image"
+    all_shader_bundles = []
+        # Create input output seq:
+    input_names = [input_image_name] + [f"interm_{i}" for i in range(len(post_process_shader) - 1)]
+    output_names = [f"interm_{i}" for i in range(len(post_process_shader) - 1)] + [output_name]
+    if post_process_shader:
+        for ind, shader_name in enumerate(post_process_shader):
+            cur_args = {x:y for x, y in post_fx_args.items()}
+            cur_args["input_name"] = input_names[ind]
+            if shader_name not in imfx_shaders.lookup_map:
+                raise ValueError(f"Invalid post process shader: {shader_name}")
+            shader_code = imfx_shaders.lookup_map[shader_name].substitute(**cur_args)
+            if include_distance_texture:
+                input_FBOs = [
+                    {"name": "distance_travelled", "width": width, "height": height, "type": "vec4"},
+                    {"name": input_names[ind], "width": width, "height": height, "type": "vec4"}
+                ]
+            else:
+                input_FBOs = [{"name": input_names[ind], "width": width, "height": height, "type": "vec4"}]
+
+            shader_bundle = {
+                "shader_code": shader_code,
+                "uniforms": {},
+                "textures": {},
+                "input_FBOs": input_FBOs,
+                "output_FBO": {"name": output_names[ind], "width": width, "height": height, "type": "vec4"}
+            }
+            all_shader_bundles.append(shader_bundle)
+    else:
+        cur_args = {x:y for x, y in post_fx_args.items()}
+        cur_args["input_name"] = input_image_name
+        shader_code = imfx_shaders.basic_third_pass.BASIC_THIRD_PASS_SHADER.substitute(**cur_args)
+        input_FBOs = [{"name": input_image_name, "width": width, "height": height, "type": "vec4"}]
+        shader_bundle = {
+            "shader_code": shader_code,
+            "uniforms": {},
+            "textures": {},
+            "input_FBOs": input_FBOs,
+            "output_FBO": {"name": output_name, "width": width, "height": height, "type": "vec4"}
+        }
+        all_shader_bundles.append(shader_bundle)
     
-    shader_bundle = {
-        "shader_code": shader_code,
-        "uniforms": {},
-        "textures": {},
-        "input_FBOs": input_FBOs,
-        "output_FBO": {"name": output_name, "width": width, "height": height, "type": "vec4"}
-    }
-    
-    return shader_bundle, output_name
+    return all_shader_bundles, output_name
 
 
 def create_aa_pass_shader_bundle(width: int, 
@@ -268,280 +248,16 @@ def create_aa_pass_shader_bundle(width: int,
         return None
     
     resolution = width // AA
-    shader_code = imfx_shaders.fxaa.FXAA_SHADER.substitute(resolution=resolution)
-    
+    shader_code = imfx_shaders.fxaa.fxaa_shader(AA).substitute(resolution=resolution)
+    # shader_code = imfx_shaders.basic_third_pass.BASIC_THIRD_PASS_SHADER.substitute({"input_name": input_image_name})
     shader_bundle = {
         "shader_code": shader_code,
         "uniforms": {},
         "textures": {},
         "input_FBOs": [{"name": input_image_name, "width": width, "height": height, "type": "vec4"}],
         "output_FBO": {"name": "image", "width": width // AA, "height": height // AA, "type": "vec4"}
+        # "output_FBO": {"name": "image", "width": width, "height": height, "type": "vec4"}
     }
     
     return shader_bundle
 
-
-@singledispatch
-def rec_sdf_shader_eval(expression: gls.GLFunction | gls.GLExpr, global_sc) -> GlobalShaderContext:
-    raise NotImplementedError(f"No shader evaluation for {type(expression)}")
-
-
-
-@rec_sdf_shader_eval.register
-def eval_mat_solid(expression: type_union[sls.MatSolid, sls.MatSolidV3], global_sc) -> GlobalShaderContext:
-    sdf_expr = expression.args[0]
-    material_expr = expression.args[1]
-    func_name = expression.__class__.__name__
-    func_type = "vec2"
-    assert isinstance(sdf_expr, gls.GLFunction) and isinstance(material_expr, gls.GLFunction), "SDF and Material must be GLFunctions"
-    global_sc = rec_sdf_shader_eval(sdf_expr, global_sc)
-    # From material only fetch index.
-    # global_sc = rec_sdf_shader_eval(material_expr, global_sc)
-    assert len(global_sc.local_sc.res_sdf_stack) > 0, "No SDF in the stack"
-    res_type, final_sdf = global_sc.local_sc.res_sdf_stack.pop()  # type: ignore
-    valid_types = ["float", func_type]
-    assert res_type in valid_types, f"Invalid result type {res_type} for {func_name}"
-    # final_material = global_sc.material_stack.pop()
-    # Add it back to stack. 
-    # This version only works in the basic version.
-    res_name = f"res_{global_sc.local_sc.res_sdf_count}"
-    global_sc.local_sc.res_sdf_count += 1
-    global_sc.local_sc.add_codeline(f"{func_type} {res_name} = {final_sdf};")
-    # global_sc.local_sc.add_dependency(func_name)
-    # global_sc.add_shader_module(func_name)
-    global_sc.local_sc.res_sdf_stack.append((func_type, res_name))
-    return global_sc
-
-@rec_sdf_shader_eval.register
-def eval_bounded_solid(expression: sls.BoundedSolid, global_sc) -> GlobalShaderContext:
-    func_name = expression.__class__.__name__
-    sdf_expr = expression.args[0]
-    bounding_expr = expression.args[1]
-    if len(expression.args) > 2:
-        bound_threshold = [expression.args[2]]
-        bound_threshold = _inline_parse_param_from_expr(expression, tuple(bound_threshold), global_sc)
-        bound_threshold = bound_threshold[0]
-    else:
-        bound_threshold = DEFAULT_BOUND_THRESHOLD
-    # process and make function for bounding expr. 
-    bounding_name = f"bounding_{global_sc.custom_func_count}"
-    global_sc.custom_func_count += 1
-    global_sc.push_codebook(bounding_name, SCENE_EXPR_PROPS)
-    assert isinstance(bounding_expr, gls.GLFunction), "Bounding expression must be a GLFunction"
-    global_sc = rec_sdf_shader_eval(bounding_expr, global_sc)
-    global_sc.resolve_codebook()
-    global_sc.pop_codebook()
-
-    inner_name = f"inner_{global_sc.custom_func_count}"
-    global_sc.custom_func_count += 1
-    global_sc.push_codebook(inner_name, SCENE_EXPR_PROPS)
-    assert isinstance(sdf_expr, gls.GLFunction), "SDF expression must be a GLFunction"
-    global_sc = rec_sdf_shader_eval(sdf_expr, global_sc)
-    inner_type, inner_sdf = global_sc.local_sc.res_sdf_stack[-1]  # type: ignore
-    bounding_last_out = global_sc.local_sc.res_sdf_stack[-1]
-    bounding_last_out_type, bounding_last_out_name = bounding_last_out
-    global_sc.resolve_codebook()
-    global_sc.pop_codebook()
-
-    # Now these functions and the SM for them is inside. 
-    # We now need the final custom -> which will combine these two. 
-    pos_latest = global_sc.local_sc.pos_stack[-1]
-    res_name = f"res_{global_sc.local_sc.res_sdf_count}"
-    global_sc.local_sc.res_sdf_count += 1
-    if bounding_last_out_type == "float":
-        code_line = BOUNDED_SOLID_FLOAT_TEMPLATE.substitute(
-            type=inner_type,
-            res_name=res_name,
-            bounding_name=bounding_name,
-            inner_name=inner_name,
-            pos_latest=pos_latest,
-            bound_threshold=bound_threshold
-        )
-    else:
-        code_line = BOUNDED_SOLID_MIX_TEMPLATE.substitute(
-            type=inner_type,
-            res_name=res_name,
-            bounding_name=bounding_name,
-            inner_name=inner_name,
-            pos_latest=pos_latest,
-            bound_threshold=bound_threshold
-        )
-    for line in code_line.split("\n"):
-        global_sc.local_sc.add_codeline(line)
-    global_sc.local_sc.add_dependency(bounding_name)
-    global_sc.local_sc.add_dependency(inner_name)
-    global_sc.local_sc.res_sdf_stack.append((inner_type, res_name))
-    # append the bounding box to the stack. 
-    return global_sc
-
-
-@rec_sdf_shader_eval.register
-def eval_prim_sdf(expression: gls.Primitive3D, global_sc) -> GlobalShaderContext:
-    
-    params = expression.args
-    shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
-    # global_sc = PRIMITIVE_MAP[type(expression)](global_sc, *shader_params)
-    box_param = ",".join(shader_params)
-    cur_pos = global_sc.local_sc.pos_stack.pop()
-    func_name = expression.__class__.__name__
-    sdf_name = f"sdf_{global_sc.local_sc.res_sdf_count}"
-    global_sc.local_sc.res_sdf_count += 1
-    # GLSL code for sphere (sphere_param[0] is the vec4 sphere parameters)
-    if len(shader_params) >= 1:
-        code_line = f"float {sdf_name} = {func_name}({cur_pos}, {box_param});"
-    else:
-        code_line = f"float {sdf_name} = {func_name}({cur_pos});"
-    global_sc.local_sc.add_codeline(code_line)
-    global_sc.local_sc.add_dependency(func_name)
-    global_sc.add_shader_module(func_name)
-    prim_name = f"prim_{global_sc.prim_count}"
-    code_line = f"vec2 {prim_name} = vec2({sdf_name}, {global_sc.prim_count});"
-    global_sc.local_sc.add_codeline(code_line)
-    global_sc.prim_count += 1
-    global_sc.local_sc.res_sdf_stack.append(("vec2", prim_name))
-
-    return global_sc
-
-@rec_sdf_shader_eval.register
-def eval_prim_sdf(expression: gls.Primitive2D, global_sc) -> GlobalShaderContext:
-    # No Prim Id difference for 2D outputs. 
-    params = expression.args
-    shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
-    # global_sc = PRIMITIVE_MAP[type(expression)](global_sc, *shader_params)
-    box_param = ",".join(shader_params)
-    cur_pos = global_sc.local_sc.pos_stack.pop()
-    func_name = expression.__class__.__name__
-    sdf_name = f"sdf_{global_sc.local_sc.res_sdf_count}"
-    global_sc.local_sc.res_sdf_count += 1
-    # GLSL code for sphere (sphere_param[0] is the vec4 sphere parameters)
-    if len(shader_params) >= 1:
-        code_line = f"float {sdf_name} = {func_name}({cur_pos}, {box_param});"
-    else:
-        code_line = f"float {sdf_name} = {func_name}({cur_pos});"
-    global_sc.local_sc.add_codeline(code_line)
-    global_sc.local_sc.add_dependency(func_name)
-    global_sc.add_shader_module(func_name)
-    global_sc.local_sc.res_sdf_stack.append(("float", sdf_name))
-
-    return global_sc
-
- 
-@rec_sdf_shader_eval.register
-def eval_encoded_sdf_grid_3d(expression: type_union[sls.EncodedSDFGrid3D, sls.AABBEncodedSDFGrid3D], global_sc) -> GlobalShaderContext:
-    # basic version
-    return eval_encoded_sdf_grid_3d_v1(expression, global_sc)
-
-@rec_sdf_shader_eval.register
-def eval_sdf_grid_3d(expression: type_union[gls.SDFGrid3D, sls.RGBGrid3D], global_sc) -> GlobalShaderContext:
-    # basic version
-    raise NotImplementedError("Convert SDFGrid3D to EncodedSDFGrid3D first.")
-
-@rec_sdf_shader_eval.register
-def eval_sdf_combinator(expression: COMBINATOR_TYPE, global_sc) -> GlobalShaderContext:
-    # it could be a argument tree, instead of this. 
-    func_name = expression.__class__.__name__
-    if isinstance(expression, (gls.SmoothUnion, gls.SmoothIntersection, gls.SmoothDifference, sls.MatSmoothColorOnly)):
-        tree_branches = [arg for arg in expression.args[:-1]]
-        param_list = [expression.args[-1]]
-    else:
-        tree_branches, param_list = [], []
-        tree_branches = [arg for arg in expression.args]
-    # the pos has to be copied
-    cur_pos = global_sc.local_sc.pos_stack.pop()
-    for child in tree_branches:
-        global_sc.local_sc.pos_stack.append(cur_pos)
-        assert isinstance(child, (gls.GLFunction, gls.GLExpr)), "Child must be a GLFunction or GLExpr"
-        global_sc = rec_sdf_shader_eval(child,
-            global_sc=global_sc,)
-    n_children = len(tree_branches)
-    # global_sc = COMBINATOR_MAP[type(expression)](global_sc, len(tree_branches), *param_list)
-
-    children = [global_sc.local_sc.res_sdf_stack.pop() for _ in range(n_children)]
-    # reverse the children
-    children = children[::-1]
-    child_names = [child[1] for child in children]
-    child_types = [child[0] for child in children]
-    # make sure they are all the same type.
-    assert all(child_type == child_types[0] for child_type in child_types), "All children must be the same type"
-    child_type = child_types[0]
-    res_sdf_name = f"sdf_{global_sc.local_sc.res_sdf_count}"
-    global_sc.local_sc.res_sdf_count += 1
-    res_sdf_names = ", ".join(child_names)
-    if param_list: 
-        shader_params = _inline_parse_param_from_expr(expression, tuple(param_list), global_sc)
-        param_str = ", ".join(shader_params)
-        res_sdf_names += f", {param_str}"
-
-    code_line = f"{child_type} {res_sdf_name} = {func_name}({res_sdf_names});"
-    global_sc.local_sc.add_codeline(code_line)
-    input_format = (child_type, n_children)
-    global_sc.local_sc.add_dependency(func_name)
-    global_sc.add_shader_module(func_name, input_format=input_format)
-    global_sc.local_sc.res_sdf_stack.append((child_type, res_sdf_name))
-    return global_sc
-
-
-@rec_sdf_shader_eval.register
-def eval_mod(expression: MOD_TYPE, global_sc) -> GlobalShaderContext:
-    sub_expr = expression.args[0]
-    params = expression.args[1:]
-    shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
-    shader_params = ", ".join(shader_params)
-    # This is a hack unclear how to deal with other types)
-    func_name = expression.__class__.__name__
-    assert isinstance(sub_expr, (gls.GLFunction, gls.GLExpr)), "Sub expression must be a GLFunction or GLExpr"
-    if isinstance(expression, gls.Modifier2D):
-        new_pos_type = "vec2"
-    else:
-        new_pos_type = "vec3"
-    if isinstance(expression, TRANSFORM_TYPE):
-        cur_pos = global_sc.local_sc.pos_stack.pop()
-        global_sc.local_sc.pos_count += 1
-        new_pos_count = global_sc.local_sc.pos_count
-        new_pos = f"pos_{new_pos_count}"
-        code_line = f"{new_pos_type} {new_pos} = {func_name}({cur_pos}, {shader_params});"
-        global_sc.local_sc.add_codeline(code_line)
-        global_sc.local_sc.add_dependency(func_name)
-        global_sc.add_shader_module(func_name)
-        global_sc.local_sc.pos_stack.append(new_pos)
-        if isinstance(expression, (gls.Scale3D, gls.Scale2D)):
-        # For the case of scaling, adjust the outputs
-            cur_res_pos = len(global_sc.local_sc.res_sdf_stack) - 1
-            global_sc = rec_sdf_shader_eval(sub_expr, global_sc)
-            new_res_pos = len(global_sc.local_sc.res_sdf_stack) - 1
-            for res_pos in range(cur_res_pos, new_res_pos):
-                res_type, res_name = global_sc.local_sc.res_sdf_stack[res_pos]
-                if res_type == "float":
-                    code_line = f"{res_name} = {res_name} * {shader_params}.x;"
-                else:
-                    code_line = f"{res_name}.x = {res_name}.x * {shader_params}.x;"
-                global_sc.local_sc.add_codeline(code_line)
-            return global_sc
-        else:
-            return rec_sdf_shader_eval(sub_expr, global_sc)
-    elif isinstance(expression, POSITIONALMOD_TYPE):
-        cur_pos = global_sc.local_sc.pos_stack.pop()
-        global_sc.local_sc.pos_count += 1
-        new_pos_count = global_sc.local_sc.pos_count
-        new_pos = f"pos_{new_pos_count}"
-        code_line = f"{new_pos_type} {new_pos} = {func_name}({cur_pos}, {shader_params});"
-        global_sc.local_sc.add_codeline(code_line)
-        global_sc.local_sc.add_dependency(func_name)
-        global_sc.add_shader_module(func_name)
-        global_sc.local_sc.pos_stack.append(new_pos)
-        return rec_sdf_shader_eval(sub_expr, global_sc)
-    elif isinstance(expression, SDFMOD_TYPE):
-        # This should be treated like Comb
-        global_sc = rec_sdf_shader_eval(sub_expr, global_sc)
-        (res_type, cur_res) = global_sc.local_sc.res_sdf_stack.pop()  # type: ignore
-        new_pos = f"res_{global_sc.local_sc.res_sdf_count}"
-        global_sc.local_sc.res_sdf_count += 1
-        code_line = f"{res_type} {new_pos} = {func_name}({cur_res}, {shader_params});"
-        global_sc.local_sc.add_codeline(code_line)
-        input_format = (res_type, 1)
-        global_sc.local_sc.add_dependency(func_name)
-        global_sc.add_shader_module(func_name, input_format=input_format)
-        global_sc.local_sc.res_sdf_stack.append((res_type, new_pos))
-        return global_sc
-    else:
-        raise NotImplementedError(f"Modifier {expression} not implemented")

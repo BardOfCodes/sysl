@@ -13,7 +13,6 @@ else:
 from geolipi.symbolic.base import GLExpr, GLFunction
 import geolipi.symbolic as gls
 from geolipi.symbolic.resolve import resolve_macros
-from geolipi.symbolic import Revolution3D
 from geolipi.symbolic.symbol_types import (
     MACRO_TYPE,
     MOD_TYPE,
@@ -184,8 +183,10 @@ def eval_gl_expr(expression: EXPR_TYPE, sketcher: Sketcher,
             new_value = float(arg)
             evaluated_args.append(new_value)
         else:
-            print(type(arg))
-            raise NotImplementedError(f"Params for{expression} not implemented")
+            raise NotImplementedError(
+                f"Unsupported argument type {type(arg).__name__} in expression {expression}. "
+                f"Expected GLFunction, GLExpr, sp.Float, or sp.Integer."
+            )
     op = SYMPY_TO_TORCH[expression.func]
     output = op(*evaluated_args)
     return output

@@ -10,7 +10,7 @@ precision highp sampler2D;
 out vec4 fragColor;
 
 uniform sampler2D distance_travelled;
-uniform sampler2D intermediate_image;
+uniform sampler2D ${input_name};
 
 uniform vec2 resolution; // (width, height)
 const int nhbd = ${nhbd};            // 1 -> 3x3, 2 -> 5x5
@@ -65,7 +65,7 @@ void main(void)
     // Convert from gl_FragCoord to UVs
     vec2 uv = gl_FragCoord.xy / resolution;
     
-    vec4 base_color = texture(intermediate_image, uv);
+    vec4 base_color = texture(${input_name}, uv);
     float center_ind = texture(distance_travelled, uv).g;
     int center_id = int(round(center_ind));
 

@@ -374,7 +374,8 @@ vec3 Shade(DirectionalLight sun, Material mat, vec3 p, vec3 rd, vec3 n,
     ambient *= AmbientOcclusion(p, n);
 
     // vec3 diffuse = ambient;
-    vec3 specular = mix(vec3(0.02), mat.albedo, mat.metallic);
+    reflection *= 0.0; clearcoat *= 0.0;
+vec3 specular = mix(vec3(0.02), mat.albedo, mat.metallic);
 
 
     vec3 L = sun.direction;

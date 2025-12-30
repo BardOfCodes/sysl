@@ -21,7 +21,8 @@ raycast = register_shader_module("""
 @inputs ro, rd, rdx, rdy, lig
 @outputs col
 @dependencies SCENE_EXPRESSION
-@vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO, _RAYCAST_MAX_STEPS, _ADD_FLOOR_PLANE
+@vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO
+@vardeps _RAYCAST_MAX_STEPS, _ADD_FLOOR_PLANE, _RAYCAST_CONSERVATIVE_STEPPING_RATE
 vec4 raycast(in vec3 ro, in vec3 rd) {
 
     vec4 res = vec4(-1.0);
@@ -72,7 +73,7 @@ vec4 raycast(in vec3 ro, in vec3 rd) {
                 res = vec4(t, h.yzw);
                 break;
             }
-            t += h.x;
+            t += h.x * _RAYCAST_CONSERVATIVE_STEPPING_RATE;
         }
     }
 
@@ -128,7 +129,8 @@ vec3 render(in vec3 ro, in vec3 rd, in vec3 rdx, in vec3 rdy, vec3 lig) {
     float t  = hit.x;
     vec3 m  = vec3(hit.yzw);
     vec3  pos = ro + rd * t;
-    vec3  nor = calcNormal(pos);
+    //vec3  nor = calcNormal(pos);
+    vec3  nor = (m.x < 0.0) ? vec3(0.0, 1.0, 0.0) : calcNormal(pos);
     vec3  ref = reflect(rd, nor);
 
     // Material determination

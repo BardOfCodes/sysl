@@ -9,6 +9,7 @@ from .shader_templates.common import CONSTANTS, UNIFORMS, PRELIMINARIES
 from .utils.ubo import create_var_map_with_ubo, generate_ubo_glsl_code, generate_inline_glsl_code
 from .utils.ubo import create_var_map_with_param_to_texture, generate_param_to_texture_glsl_code
 from .utils.ubo import _get_variable_type_and_value, _to_float
+
 GLSL_TEMPLATE = Template("""#version 300 es
 #ifdef GL_ES
 precision highp float;
@@ -445,9 +446,6 @@ class GlobalShaderContext:
         if version == "v3":
             dependencies.append("BaseMaterials")
             dependencies.append("MatPlastic")
-        elif version == "v4":
-            dependencies.append("BaseMaterials_v4")
-            dependencies.append("MatPlastic_v4")
         else:
             raise ValueError(f"Invalid version: {version}")
         mat_switch_cases = "\n".join(cases)

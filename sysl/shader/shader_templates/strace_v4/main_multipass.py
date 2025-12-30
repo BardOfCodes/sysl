@@ -5,119 +5,32 @@ credits = """
 import numpy as np
 from string import Template
 from ...shader_module import register_shader_module, SMMap
+from ...shader_mod_ext import CustomFunctionShaderModule
+from ..strace_v3.main_multipass import mainImagePostTrace as mainImagePostTrace_v3
+from ..strace_v3.main_multipass import mainImageBaseTemplate as mainImageBaseTemplate_v3
 from ..common import CONSTANTS
 
 CONSTANTS.update({
     "_EE": ("float", 1000.0),
 })
 
+class mainImagePostTrace_v4(mainImagePostTrace_v3):
+    def __init__(self, name=None, template=None, *args, **kwargs):
+        if template is None:
+            template = mainImageBaseTemplate_v3
+        if name is None:
+            name = "mainImage_post_trace_v4"
 
-mainImage_post_trace = register_shader_module("""
-@name mainImage_post_trace_v4
-@inputs color, fragCoord, resolution, ca, lig
-@outputs color
-@dependencies  setCamera_v1, LightPackage_v4, ShadeRayPostTrace_v4, ToneMapping, BasicSun_v4
-@vardeps cameraDistance, cameraOrigin, cameraAngleX, cameraAngleY, resolution
-@vardeps _FOCAL_LENGTH, _ZERO, _AA
-void mainImage_post_trace(out vec4 color, in vec2 pxy )
-{
+        super().__init__(name, template, *args, **kwargs)
+        self.dependencies = ["setCamera_v1", "LightPackage_v4", "ShadeRayPostTrace_v4", "ToneMapping", "BasicSun_v4"]
+        self.vardeps = ["cameraDistance", "cameraOrigin", "cameraAngleX", "cameraAngleY", "resolution", "_FOCAL_LENGTH", "_ZERO", "_AA"]
+        self.inputs = ["color", "fragCoord", "resolution", "ca", "lig"]
+        self.outputs = ["color"]
+        self.aa = 1
 
-    float dist = texelFetch(distance_travelled, ivec2(pxy), 0).r;
-    vec2 mo = vec2(0.0, 0.0);
-    // camera	
-    vec3 ta = vec3( 0.0, 1.0, -0.0 ) + cameraOrigin;
-    vec3 ro = ta + cameraDistance * vec3(
-        cos(cameraAngleX) * sin(cameraAngleY), // X component
-        sin(cameraAngleX),                     // Y component (elevation)
-        cos(cameraAngleX) * cos(cameraAngleY)  // Z component
-    );
-    // camera-to-world transformation
-    mat3 ca = setCamera( ro, ta, 0.0 );
 
-    // Shade background
-    DirectionalLight sun = BasicSun();
-    int s = 0;
-    vec2 p = (2.0*(pxy)-resolution.xy)/resolution.xy;
+SMMap["mainImage_post_trace_v4"] = mainImagePostTrace_v4
 
-    vec3 rd = ca * normalize( vec3(p, _FOCAL_LENGTH) );
-
-    vec3 rgb = ShadeRayPostTrace(sun, ro, rd, s, dist);
-    rgb = ToneMapping(rgb);
-
-    
-    color = vec4( rgb, 1.0 );
-}
-""")
-
-mainImage_post_trace_AA = register_shader_module("""
-@name mainImage_post_trace_v4_AA
-@inputs color, fragCoord, resolution, ca, lig
-@outputs color
-@dependencies  setCamera_v1, LightPackage_v4, ShadeRayPostTrace_v4, ToneMapping, BasicSun_v4
-@vardeps cameraDistance, cameraOrigin, cameraAngleX, cameraAngleY, resolution
-@vardeps _FOCAL_LENGTH, _ZERO, _AA
-// PASS 2 (shading) — AA atlas aware
-
-const vec2 OFFS[4] = vec2[4](
-    vec2(-0.25, -0.25),
-    vec2(+0.25, -0.25),
-    vec2(-0.25, +0.25),
-    vec2(+0.25, +0.25)
-);
-
-void mainImage_post_trace(out vec4 color, in vec2 pxy)
-{
-    // -----------------------------------------------------------
-    // 0) Read distance from the atlas (unchanged)
-    // -----------------------------------------------------------
-    float dist = texelFetch(distance_travelled, ivec2(pxy), 0).r;
-
-    // -----------------------------------------------------------
-    // 1) Determine quadrant in the 2×2 atlas
-    //    resolution.xy is full atlas size (2W x 2H)
-    // -----------------------------------------------------------
-    vec2 baseRes = 0.5 * resolution.xy;          // (W, H)
-    vec2 qFloat  = floor(pxy / baseRes);         // (0 or 1, 0 or 1)
-    int sampleIdx = int(qFloat.x) + 2 * int(qFloat.y);   // 0..3
-
-    vec2 pxy_local = pxy - qFloat * baseRes;     // local pixel inside quadrant
-
-    // -----------------------------------------------------------
-    // 2) Subpixel jitter (same four offsets as pass 1)
-    // -----------------------------------------------------------
-    vec2 jitterPx = OFFS[sampleIdx];
-
-    // -----------------------------------------------------------
-    // 3) Camera (unchanged)
-    // -----------------------------------------------------------
-    vec3 ta = vec3(0.0, 1.0, 0.0) + cameraOrigin;
-    vec3 ro = ta + cameraDistance * vec3(
-        cos(cameraAngleX) * sin(cameraAngleY),
-        sin(cameraAngleX),
-        cos(cameraAngleX) * cos(cameraAngleY)
-    );
-
-    mat3 ca = setCamera(ro, ta, 0.0);
-
-    // -----------------------------------------------------------
-    // 4) Compute ray direction (THIS is the fix)
-    //    Use pxy_local + jitter, normalized by *baseRes* (not full res)
-    // -----------------------------------------------------------
-    vec2 p = ((pxy_local + jitterPx) * 2.0 - baseRes) / baseRes;
-
-    vec3 rd = ca * normalize(vec3(p, _FOCAL_LENGTH));
-
-    // -----------------------------------------------------------
-    // 5) Shading (unchanged)
-    // -----------------------------------------------------------
-    DirectionalLight sun = BasicSun();
-    int s = 0;
-
-    vec3 rgb = ShadeRayPostTrace(sun, ro, rd, s, dist);
-    rgb = ToneMapping(rgb);
-
-    color = vec4(rgb, 1.0);
-}""")
 
 ShadeRayPostTrace_v4 = register_shader_module("""
 @name ShadeRayPostTrace_v4
@@ -163,7 +76,7 @@ vec3 ShadeRayPostTrace(DirectionalLight sun, vec3 ro, vec3 rd, out int steps, fl
 
         // secondary ray
         s = 0;
-        res = SphereTraceGeom(pt+n*0.01, reflect_dir, 100.0, hit, s);
+        res = SphereTraceGeom(pt+n*0.0001, reflect_dir, 100.0, hit, s);
         //res = SphereTracePostTrace(pt+n*0.01, reflect_dir, 100.0, hit, s, 0.0);
         t = res.x;
         steps += s;
@@ -181,7 +94,7 @@ vec3 ShadeRayPostTrace(DirectionalLight sun, vec3 ro, vec3 rd, out int steps, fl
         reflection = clearcoat;
     else {
         float r = 1.0/max(mat.mrc.y, 0.00001);
-        float v = Shadow(pt+n*0.1, reflect_dir, 1000.0, r);
+        float v = Shadow(pt+n*0.0001, reflect_dir, 1000.0, r);
         reflection = mix(SkyAmbient(sun)*0.1, Env(reflect_dir, sun), v);
     }
 
@@ -201,7 +114,7 @@ SphereTracePostTrace_v4 = register_shader_module("""
 @outputs col
 @dependencies SCENE_EXPRESSION, MatFloor_v4
 @vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO, _RAYCAST_MAX_STEPS, 
-@vardeps _ADD_FLOOR_PLANE, _RAYCAST_CONSERVATIVE_STEPPING_RATE
+@vardeps _RAYCAST_CONSERVATIVE_STEPPING_RATE
 MATPoint SphereTracePostTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s, float dist){
 
     MATPoint res;
@@ -228,18 +141,6 @@ MATPoint SphereTracePostTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out i
 
     float tmin = max(max(1.0, t0), dist);
     float tmax = min(20.0, t1);
-
-    // 2) Floor-plane (y=0) test
-    // MAKE THIS OPTIONAL.
-    if (_ADD_FLOOR_PLANE) {
-        float tp = -ro.y / rd.y;
-        if (tp > 0.0 && tp < tmax) {
-            tmax = tp;
-            res.x = tp;
-            _h = true;
-            _s = 0;
-        }
-    }
 
     // 3) _AABB test
     vec3 inv_rd = 1.0 / rd;  // hoist reciprocal
@@ -281,7 +182,7 @@ SphereTraceGeom_v4 = register_shader_module("""
 @outputs col
 @dependencies GEOM_EXPRESSION, SCENE_EXPRESSION, MatFloor_v4
 @vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO, _RAYCAST_MAX_STEPS, 
-@vardeps _ADD_FLOOR_PLANE, _RAYCAST_CONSERVATIVE_STEPPING_RATE
+@vardeps _RAYCAST_CONSERVATIVE_STEPPING_RATE
 MATPoint SphereTraceGeom(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
 
     MATPoint res;
@@ -308,18 +209,6 @@ MATPoint SphereTraceGeom(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s
 
     float tmin = max(1.0, t0);
     float tmax = min(20.0, t1);
-
-    // 2) Floor-plane (y=0) test
-    // MAKE THIS OPTIONAL.
-    if (_ADD_FLOOR_PLANE) {
-        float tp = -ro.y / rd.y;
-        if (tp > 0.0 && tp < tmax) {
-            tmax = tp;
-            res.x = tp;
-            _h = true;
-            _s = 0;
-        }
-    }
 
     // 3) _AABB test
     vec3 inv_rd = 1.0 / rd;  // hoist reciprocal
@@ -351,5 +240,4 @@ MATPoint SphereTraceGeom(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s
     res = SCENE_EXPRESSION(ro + rd * t);
     return res;
 }""")
-
 

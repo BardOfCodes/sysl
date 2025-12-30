@@ -274,6 +274,28 @@ SMOOTH_DIFFERENCE_ARITY_MAP = {
     ("MATPoint", 2): SMOOTH_DIFFERENCE_VEC_CODE.substitute(type="MATPoint"),
 }
 
+XOR_FLOAT_CODE = """
+float XOR( float res1, float res2 )
+{
+    return max(min(res1, res2), -max(res1, res2));
+}
+"""
+
+XOR_VEC_CODE = Template("""
+${type} XOR( ${type} res1, ${type} res2 )
+{
+    return max(min(res1.x, res2.x), -max(res1.x, res2.x));
+}
+""")
+
+XOR_ARITY_MAP = {
+    ("float", 2): XOR_FLOAT_CODE,
+    ("vec2", 2): XOR_VEC_CODE.substitute(type="vec2"),
+    ("vec3", 2): XOR_VEC_CODE.substitute(type="vec3"),
+    ("vec4", 2): XOR_VEC_CODE.substitute(type="vec4"),
+    ("MATPoint", 2): XOR_VEC_CODE.substitute(type="MATPoint"),
+}
+
 # DILATE TEMPLATES
 DILATE_FLOAT_CODE = """
 float Dilate3D( float res, float k )
@@ -374,3 +396,4 @@ NEG_ONLY_ONION_ARITY_MAP = {
     ("vec4", 1): NEG_ONLY_ONION_VEC_CODE.substitute(type="vec4"),
     ("MATPoint", 1): NEG_ONLY_ONION_VEC_CODE.substitute(type="MATPoint"),
 }
+

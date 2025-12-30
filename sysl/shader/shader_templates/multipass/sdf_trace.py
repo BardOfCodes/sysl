@@ -4,7 +4,8 @@ credits = """
 // Original Author: Inigo Quilez
 """
 
-from ...shader_module import register_shader_module
+from ...shader_module import register_shader_module, SMMap
+from ...shader_mod_ext import CustomFunctionShaderModule
 from string import Template
 import numpy as np
 from ..common import CONSTANTS
@@ -13,14 +14,15 @@ CONSTANTS.update({
     "_CONSERVATIVE_STEP_DIST": ("float", 1.0),
 })
 
-mainImage = register_shader_module("""
-@name main_sdf_trace
-@inputs fragColor, fragCoord
-@outputs fragColor
-@dependencies setCamera_v1, raycast_sdf_trace
-@vardeps _AA, cameraOrigin, cameraDistance, cameraAngleX, cameraAngleY, resolution, _FOCAL_LENGTH, _ZERO
-// We Ray trace and store the distance travelled in a float FBO 
-// Technically when we actually do AA we need to save a bigger buffer - not average it out.
+mainSDFTraceBaseTemplate = Template("""
+vec2 octEncode(vec3 n) {
+    n /= (abs(n.x) + abs(n.y) + abs(n.z));
+    vec2 e = n.xy;
+    if (n.z < 0.0) e = (1.0 - abs(e.yx)) * sign(e.xy);
+    return e; // in [-1,1]
+}
+
+${offsets_fill}
 void main_sdf_trace( out vec4 fragColor, in vec2 fragCoord )
 {
     // camera	
@@ -32,42 +34,32 @@ void main_sdf_trace( out vec4 fragColor, in vec2 fragCoord )
     );
     // camera-to-world transformation
     mat3 ca = setCamera( ro, ta, 0.0 );
-    vec2 p = (2.0*(fragCoord)-resolution.xy)/resolution.xy;
+
+    ${p_code}
 
     vec3 rd = ca * normalize( vec3(p, _FOCAL_LENGTH) );
 
     // render	
     vec2 trace_result = raycast_sdf_trace(ro, rd);
+    vec3  pos = ro + rd * trace_result.x;
+    vec3  nor = calcNormal(pos);
+    vec2 enc = octEncode(nor) * 0.5 + 0.5;
     
-    // TODO: optionally introduce other post processing steps here.
-
-    
-    fragColor = vec4(trace_result.x, trace_result.y, 0.0, 1.0);  // Only .r will be stored in R32F FBO
+    fragColor = vec4(trace_result.x, trace_result.y, enc.x, enc.y); 
 }""")
 
-mainImage_AA = register_shader_module("""
-@name main_sdf_trace_AA
-@inputs fragColor, fragCoord
-@outputs fragColor
-@dependencies setCamera_v1, raycast_sdf_trace
-@vardeps _AA, cameraOrigin, cameraDistance, cameraAngleX, cameraAngleY, resolution, _FOCAL_LENGTH, _ZERO
-// We Ray trace and store the distance travelled in a float FBO 
-// Technically when we actually do AA we need to save a bigger buffer - not average it out.
-const vec2 OFFS[4] = vec2[4](
-    vec2(-0.25, -0.25),
-    vec2(+0.25, -0.25),
-    vec2(-0.25, +0.25),
-    vec2(+0.25, +0.25)
-);
-void main_sdf_trace( out vec4 fragColor, in vec2 fragCoord )
-{
+p_code_AA_1 = """
+    vec2 p = (2.0*(fragCoord)-resolution.xy)/resolution.xy;
+"""
+
+p_code_AA_N = Template("""
     // -----------------------------
     // 0) Atlas / quadrant bookkeeping
     // -----------------------------
-    vec2 baseRes = 0.5 * resolution.xy;               // size of ONE sub-image (W,H)
-    vec2 qFloat   = floor(fragCoord / baseRes);       // (0/1, 0/1)
+    vec2 baseRes = ${base_res_factor} * resolution.xy;               // size of ONE sub-image (W,H)
+    vec2 qFloat   = floor(fragCoord / baseRes);       // (0..${aa_amount_minus_one}, 0..${aa_amount_minus_one})
     ivec2 q       = ivec2(qFloat);
-    int sampleIdx = q.x + 2 * q.y;                    // 0..3
+    int sampleIdx = q.x + ${aa_amount} * q.y;                    // 0..${num_samples_minus_one}
 
     // Local pixel coords inside the sub-image
     vec2 localFrag = fragCoord - qFloat * baseRes;    // [0..W) x [0..H)
@@ -79,29 +71,84 @@ void main_sdf_trace( out vec4 fragColor, in vec2 fragCoord )
     vec2 jitterPx = OFFS[sampleIdx];
 
     // -----------------------------
-    // 2) Camera setup
-    // -----------------------------
-    vec3 ta = vec3(0.0, 1.0, 0.0) + cameraOrigin;
-    vec3 ro = ta + cameraDistance * vec3(
-        cos(cameraAngleX) * sin(cameraAngleY),
-        sin(cameraAngleX),
-        cos(cameraAngleX) * cos(cameraAngleY)
-    );
-    mat3 ca = setCamera(ro, ta, 0.0);
-
-    // -----------------------------
-    // 3) Ray for this "sub-image" (normalize using baseRes)
+    // 2) Ray for this "sub-image" (normalize using baseRes)
     //    NOTE: normalize NDC using baseRes, not full resolution
     // -----------------------------
     vec2 p = ((localFrag + jitterPx) * 2.0 - baseRes) / baseRes;   // [-1,1] in sub-image
-    vec3 rd = ca * normalize(vec3(p, _FOCAL_LENGTH));
+""")
 
-    // -----------------------------
-    // 4) Trace and pack outputs
-    // -----------------------------
-    vec2 t = raycast_sdf_trace(ro, rd);   // t.x: distance, t.y: primitive id (or whatever you return)
-    fragColor = vec4(t.x, t.y, 0.0, 1.0); // R32F (distance) + optional G for pid
-}""")
+offset_template = Template("""
+const vec2 OFFS[${num_samples}] = vec2[${num_samples}](
+${offsets_array}
+);
+""")
+
+class mainSDFTrace(CustomFunctionShaderModule):
+    def __init__(self, name=None, template=None, *args, **kwargs):
+        if template is None:
+            template = mainSDFTraceBaseTemplate
+        if name is None:
+            name = "main_sdf_trace"
+
+        super().__init__(name, template, *args, **kwargs)
+        self.dependencies = ["setCamera_v1", "raycast_sdf_trace", "calcNormal_v1", ]
+        self.vardeps = ["_AA", "cameraOrigin", "cameraDistance", "cameraAngleX", "cameraAngleY", "resolution", "_FOCAL_LENGTH", "_ZERO"]
+        self.inputs = ["fragColor", "fragCoord"]
+        self.outputs = ["fragColor"]
+        self.aa = 1
+
+    def register_hit(self, *args, **kwargs):
+        aa_amount = int(kwargs.get("AA", None))
+        assert aa_amount is not None, "AA is required"
+        self.aa = aa_amount
+        
+        self.hit_count += 1
+
+    def generate_code(self):
+        assert self.hit_count == 1, "Only one AA pass is valid"
+        aa_amount = self.aa
+        num_samples = aa_amount * aa_amount
+        
+        if aa_amount == 1:
+            p_code = p_code_AA_1
+        else:
+            p_code = p_code_AA_N.substitute(
+                base_res_factor=f"{1.0 / aa_amount:.15f}",
+                aa_amount=aa_amount,
+                aa_amount_minus_one=aa_amount - 1,
+                num_samples_minus_one=num_samples - 1
+            )
+        
+        # Generate offsets array
+        # For AA=n, we create an n×n grid of offsets
+        # Offset pattern: for position (i, j) in grid, offset = ((i + 0.5) / n - 0.5, (j + 0.5) / n - 0.5)
+        offsets = []
+        for y in range(aa_amount):
+            for x in range(aa_amount):
+                offset_x = (x + 0.5) / aa_amount - 0.5
+                offset_y = (y + 0.5) / aa_amount - 0.5
+                sign_x = "+" if offset_x >= 0 else ""
+                sign_y = "+" if offset_y >= 0 else ""
+                offsets.append(f"    vec2({sign_x}{offset_x:.6f}, {sign_y}{offset_y:.6f})")
+        
+        offsets_array = ",\n".join(offsets)
+        if aa_amount == 1:
+            offsets_fill = ""
+        else:
+            offsets_fill = offset_template.substitute(num_samples=num_samples, offsets_array=offsets_array)
+        
+        final_code_str = self.template.substitute(p_code=p_code, offsets_fill=offsets_fill)
+        self.code = final_code_str
+
+    def emit_code(self):
+        if self.code is None:
+            self.generate_code()
+        return self.code
+
+
+SMMap["main_sdf_trace"] = mainSDFTrace
+
+
 
 raycast_sdf_trace = register_shader_module("""
 @name raycast_sdf_trace
@@ -168,4 +215,3 @@ vec2 raycast_sdf_trace(in vec3 ro, in vec3 rd) {
     res.x *= _CONSERVATIVE_STEP_DIST;
     return res;
 }""")
-

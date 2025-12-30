@@ -21,7 +21,7 @@ from PIL import Image
 import geolipi.symbolic as gls
 import sysl.symbolic as sls
 from sysl.shader.evaluate import evaluate_to_shader
-from sysl.shader_vis.offline_render import render_single_pass
+from sysl.shader_runtime.offline_render import render_single_pass
 
 
 def test_basic_sphere():
@@ -32,7 +32,7 @@ def test_basic_sphere():
     
     # Create a simple sphere scene
     sphere = gls.Sphere3D((1.0,))
-    material = sls.SMPLMaterial((2.0,))
+    material = sls.MaterialV1((2.0,))
     scene = sls.MatSolidV1(sphere, material)
     
     # Settings for simple render
@@ -90,7 +90,7 @@ def test_translated_sphere():
     # Create a translated sphere
     sphere = gls.Sphere3D((0.5,))
     translated = gls.Translate3D(sphere, (0.5, 0.0, 0.0))
-    material = sls.SMPLMaterial((3.0,))
+    material = sls.MaterialV1((3.0,))
     scene = sls.MatSolidV1(translated, material)
     
     settings = {
@@ -126,7 +126,7 @@ def test_union_shapes():
     sphere = gls.Translate3D(gls.Sphere3D((0.4,)), (-0.3, 0.0, 0.0))
     box = gls.Translate3D(gls.Cuboid3D((0.3, 0.3, 0.3)), (0.3, 0.0, 0.0))
     union = gls.Union(sphere, box)
-    material = sls.SMPLMaterial((4.0,))
+    material = sls.MaterialV1((4.0,))
     scene = sls.MatSolidV1(union, material)
     
     settings = {

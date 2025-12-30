@@ -1,7 +1,7 @@
 import geolipi.symbolic as gls
 import sysl.symbolic as sls
 from sysl.shader.evaluate import evaluate_to_shader
-from sysl.shader_vis.generate_shader_html import create_shader_html, make_jupyter_compatible_html
+from sysl.shader_runtime.generate_shader_html import create_shader_html, make_jupyter_compatible_html
 
 
 settings = {
@@ -18,7 +18,7 @@ settings = {
 }
 # Create basic shapes
 sphere = gls.Sphere3D((1.0,))
-material = sls.SMPLMaterial((2.0,))
+material = sls.MaterialV1((2.0,))
 scene_with_material = sls.MatSolidV1(sphere, material)
 
 # Render

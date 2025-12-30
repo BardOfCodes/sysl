@@ -9,14 +9,14 @@ precision highp sampler2D;
 
 out vec4 fragColor;
 
-uniform sampler2D intermediate_image;
+uniform sampler2D ${input_name};
 
 uniform vec2 resolution; // (width, height)
 void main(void)
 {
     // Convert from gl_FragCoord to UVs
     vec2 uv = gl_FragCoord.xy / resolution;
-    vec4 base_color = texture(intermediate_image, uv);
+    vec4 base_color = texture(${input_name}, uv);
     fragColor = base_color;
 }
 """)

@@ -2,20 +2,16 @@
 import numpy as np
 from string import Template
 from ...shader_module import register_shader_module, SMMap
+from ...shader_mod_ext import CustomFunctionShaderModule
 from ..common import CONSTANTS
-# OP 1 -> create SCENE_TRACE function -> which only gets to the points. 
-# And have mat function which does the materials. 
-# 
-mainImage_post_trace = register_shader_module("""
-@name mainImage_post_trace_v3
-@inputs color, pxy, resolution, ca, lig
-@outputs color
-@dependencies  setCamera_v1, LightPackage, ShadeRayPostTrace, ToneMapping, BasicSun
-@vardeps cameraDistance, cameraOrigin, cameraAngleX, cameraAngleY, resolution
-@vardeps _FOCAL_LENGTH, _ZERO, _AA
+
+
+mainImageBaseTemplate = Template("""
+${offsets_fill}
 void mainImage_post_trace(out vec4 color, in vec2 pxy )
 {
 
+    float dist = texelFetch(distance_travelled, ivec2(pxy), 0).r;
     vec2 mo = vec2(0.0, 0.0);
     // camera	
     vec3 ta = vec3( 0.0, 1.0, -0.0 ) + cameraOrigin;
@@ -26,32 +22,101 @@ void mainImage_post_trace(out vec4 color, in vec2 pxy )
     );
     // camera-to-world transformation
     mat3 ca = setCamera( ro, ta, 0.0 );
-    vec3 tot = vec3(0.0);
-    float dist = texelFetch(distance_travelled, ivec2(pxy), 0).r;
 
     // Shade background
     DirectionalLight sun = BasicSun();
     int s = 0;
-    for( int m=_ZERO; m<_AA; m++ )
-    for( int n=_ZERO; n<_AA; n++ )
-    {
-        // pixel coordinates
-        vec2 o = vec2(float(m),float(n)) / float(_AA) - 0.5;
 
-        vec2 p = (2.0*(pxy+o)-resolution.xy)/resolution.xy;
+    ${p_code}
 
-        vec3 rd = ca * normalize( vec3(p, _FOCAL_LENGTH) );
+    vec3 rd = ca * normalize( vec3(p, _FOCAL_LENGTH) );
 
-        vec3 rgb = ShadeRayPostTrace(sun, ro, rd, s, dist);
-        rgb = ToneMapping(rgb);
-        tot += rgb;
-    }
+    vec3 rgb = ShadeRayPostTrace(sun, ro, rd, s, dist);
+    rgb = ToneMapping(rgb);
 
-    tot /= float(_AA*_AA);
     
-    color = vec4( tot, 1.0 );
+    color = vec4( rgb, 1.0 );
 }
 """)
+
+p_code_AA_1 = """
+    vec2 p = (2.0*(pxy)-resolution.xy)/resolution.xy;
+"""
+p_code_AA_N = Template("""
+    vec2 baseRes = ${base_res_factor} * resolution.xy;          // (W, H)
+    vec2 qFloat  = floor(pxy / baseRes);  
+    int sampleIdx = int(qFloat.x) + ${aa_amount} * int(qFloat.y);
+    vec2 pxy_local = pxy - qFloat * baseRes;     // local pixel inside quadrant
+    vec2 jitterPx = OFFS[sampleIdx];
+    vec2 p = ((pxy_local + jitterPx) * 2.0 - baseRes) / baseRes;
+""")
+
+offset_template = Template("""
+const vec2 OFFS[${num_samples}] = vec2[${num_samples}](
+${offsets_array}
+);
+""")
+
+class mainImagePostTrace(CustomFunctionShaderModule):
+    def __init__(self, name=None, template=None, *args, **kwargs):
+        if template is None:
+            template = mainImageBaseTemplate
+        if name is None:
+            name = "mainImage_post_trace_v3"
+
+        super().__init__(name, template, *args, **kwargs)
+        self.dependencies = ["setCamera_v1", "LightPackage", "ShadeRayPostTrace", "ToneMapping", "BasicSun"]
+        self.vardeps = ["cameraDistance", "cameraOrigin", "cameraAngleX", "cameraAngleY", "resolution", "_FOCAL_LENGTH", "_ZERO", "_AA"]
+        self.inputs = ["color", "fragCoord", "resolution", "ca", "lig"]
+        self.outputs = ["color"]
+        self.aa = 1
+
+    def register_hit(self, *args, **kwargs):
+        aa_amount = int(kwargs.get("AA", None))
+        assert aa_amount is not None, "AA is required"
+        self.aa = aa_amount
+        
+        self.hit_count += 1
+
+    def generate_code(self):
+        code_parts = []
+        assert self.hit_count == 1, "Only one AA pass is valid"
+        aa_amount = self.aa
+        num_samples = aa_amount * aa_amount
+        if aa_amount == 1:
+            p_code = p_code_AA_1
+        else:
+            p_code = p_code_AA_N.substitute(base_res_factor=f"{1.0 / aa_amount:.15f}", aa_amount=aa_amount)
+        
+        # Generate offsets array
+        # For AA=n, we create an n×n grid of offsets
+        # Offset pattern: for position (i, j) in grid, offset = ((i + 0.5) / n - 0.5, (j + 0.5) / n - 0.5)
+        offsets = []
+        for y in range(aa_amount):
+            for x in range(aa_amount):
+                offset_x = (x + 0.5) / aa_amount - 0.5
+                offset_y = (y + 0.5) / aa_amount - 0.5
+                sign_x = "+" if offset_x >= 0 else ""
+                sign_y = "+" if offset_y >= 0 else ""
+                offsets.append(f"    vec2({sign_x}{offset_x:.6f}, {sign_y}{offset_y:.6f})")
+        
+        offsets_array = ",\n".join(offsets)
+        if aa_amount == 1:
+            offsets_fill = ""
+        else:
+            offsets_fill = offset_template.substitute(num_samples=num_samples, offsets_array=offsets_array)
+        
+        final_code_str = self.template.substitute(p_code=p_code, offsets_fill=offsets_fill)
+        self.code = final_code_str
+        
+
+    def emit_code(self):
+        if self.code is None:
+            self.generate_code()
+        return self.code
+
+SMMap["mainImage_post_trace_v3"] = mainImagePostTrace
+
 
 
 ShadeRayPostTrace = register_shader_module("""
@@ -98,7 +163,7 @@ vec3 ShadeRayPostTrace(DirectionalLight sun, vec3 ro, vec3 rd, out int steps, fl
 
         // secondary ray
         s = 0;
-        res = SphereTraceGeom(pt+n*0.01, reflect_dir, 100.0, hit, s);
+        res = SphereTraceGeom(pt+n*0.0001, reflect_dir, 100.0, hit, s);
         t = res.x;
         steps += s;
 
@@ -117,7 +182,7 @@ vec3 ShadeRayPostTrace(DirectionalLight sun, vec3 ro, vec3 rd, out int steps, fl
         reflection = clearcoat;
     else {
         float r = 1.0/max(mat.roughness, 0.00001);
-        float v = Shadow(pt+n*0.1, reflect_dir, 1000.0, r);
+        float v = Shadow(pt+n*0.0001, reflect_dir, 1000.0, r);
         reflection = mix(SkyAmbient(sun)*0.1, Env(reflect_dir, sun), v);
     }
 
@@ -134,7 +199,7 @@ SphereTracePostTrace = register_shader_module("""
 @outputs col
 @dependencies SCENE_EXPRESSION
 @vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO, _RAYCAST_MAX_STEPS, 
-@vardeps _ADD_FLOOR_PLANE, _RAYCAST_CONSERVATIVE_STEPPING_RATE
+@vardeps _RAYCAST_CONSERVATIVE_STEPPING_RATE
 vec2 SphereTracePostTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s, float dist){
 
     vec2 res = vec2(-1.0,-1.0);
@@ -160,18 +225,6 @@ vec2 SphereTracePostTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _
 
     float tmin = max(dist, t0);
     float tmax = min(20.0, t1);
-
-    // 2) Floor-plane (y=0) test
-    // MAKE THIS OPTIONAL.
-    if (_ADD_FLOOR_PLANE) {
-        float tp = -ro.y / rd.y;
-        if (tp > 0.0 && tp < tmax) {
-            tmax = tp;
-            res = vec2(tp, 1.0);
-            _h = true;
-            _s = 0;
-        }
-    }
 
     // 3) _AABB test
     vec3 inv_rd = 1.0 / rd;  // hoist reciprocal
@@ -211,7 +264,7 @@ SphereTraceGeom = register_shader_module("""
 @outputs col
 @dependencies GEOM_EXPRESSION, SCENE_EXPRESSION
 @vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO, _RAYCAST_MAX_STEPS, 
-@vardeps _ADD_FLOOR_PLANE, _RAYCAST_CONSERVATIVE_STEPPING_RATE
+@vardeps  _RAYCAST_CONSERVATIVE_STEPPING_RATE
 vec2 SphereTraceGeom(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
 
     vec2 res = vec2(-1.0,-1.0);
@@ -237,18 +290,6 @@ vec2 SphereTraceGeom(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
 
     float tmin = max(1.0, t0);
     float tmax = min(20.0, t1);
-
-    // 2) Floor-plane (y=0) test
-    // MAKE THIS OPTIONAL.
-    if (_ADD_FLOOR_PLANE) {
-        float tp = -ro.y / rd.y;
-        if (tp > 0.0 && tp < tmax) {
-            tmax = tp;
-            res = vec2(tp, 1.0);
-            _h = true;
-            _s = 0;
-        }
-    }
 
     // 3) _AABB test
     vec3 inv_rd = 1.0 / rd;  // hoist reciprocal

@@ -21,7 +21,7 @@ from PIL import Image
 import geolipi.symbolic as gls
 import sysl.symbolic as sls
 from sysl.shader.evaluate_multipass import evaluate_to_multipass_shader
-from sysl.shader_vis.offline_render import render_multipass
+from sysl.shader_runtime.offline_render import render_multipass
 
 
 def test_basic_multipass_v4():

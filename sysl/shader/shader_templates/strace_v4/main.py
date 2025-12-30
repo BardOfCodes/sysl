@@ -39,13 +39,13 @@ Material MaterialV4(vec3 albedo, vec3 emissive, vec3 mrc)
 }
 """)
 
-SMPLMaterialV4 = register_shader_module("""
-@name SMPLMaterialV4
+MaterialV1V4 = register_shader_module("""
+@name MaterialV1V4
 @inputs albedo, emissive, mrc
 @outputs mat
 @dependencies BaseMaterials_v4
 @vardeps 
-Material SMPLMaterialV4(vec3 albedo, vec2 mr)
+Material MaterialV1V4(vec3 albedo, vec2 mr)
 {   
     Material mat;
     mat.albedo = albedo;
@@ -104,7 +104,7 @@ void mainImage(out vec4 color, in vec2 pxy )
 
         vec3 rd = ca * normalize( vec3(p, _FOCAL_LENGTH) );
 
-        vec3 rgb = ShadeRay_v4(sun, ro, rd, s);
+        vec3 rgb = ShadeRay(sun, ro, rd, s);
         rgb = ToneMapping(rgb);
         tot += rgb;
     }
@@ -120,7 +120,7 @@ ShadeRay_v4 = register_shader_module("""
 @name ShadeRay_v4
 @inputs sun, sky
 @outputs color
-@dependencies LightPackage_v4, SphereTrace_v4, background_v4, SCENE_NORMAL, SCENE_MATERIAL, MATPoint
+@dependencies LightPackage_v4, SphereTrace_v4, background_v4, SCENE_NORMAL, MATPoint
 @vardeps 
 // LightPackage funccalls - DirectionLight, Sky, Env, Shadow, Shade, SkyAmbient
 // Background color
@@ -129,7 +129,7 @@ ShadeRay_v4 = register_shader_module("""
 // ro : Ray origin
 // rd : Ray direction
 // steps : Number of trace steps
-vec3 ShadeRay_v4(DirectionalLight sun, vec3 ro, vec3 rd, out int steps) {
+vec3 ShadeRay(DirectionalLight sun, vec3 ro, vec3 rd, out int steps) {
 
     // Hit and number of steps
     bool hit = false;
@@ -160,7 +160,7 @@ vec3 ShadeRay_v4(DirectionalLight sun, vec3 ro, vec3 rd, out int steps) {
 
         // secondary ray
         s = 0;
-        res = SphereTrace(pt+n*0.01, reflect_dir, 100.0, hit, s);
+        res = SphereTrace(pt+n*0.0001, reflect_dir, 100.0, hit, s);
         t = res.x;
         steps += s;
 
@@ -177,7 +177,7 @@ vec3 ShadeRay_v4(DirectionalLight sun, vec3 ro, vec3 rd, out int steps) {
         reflection = clearcoat;
     else {
         float r = 1.0/max(mat.mrc.y, 0.00001);
-        float v = Shadow(pt+n*0.1, reflect_dir, 1000.0, r);
+        float v = Shadow(pt+n*0.0001, reflect_dir, 1000.0, r);
         reflection = mix(SkyAmbient(sun)*0.1, Env(reflect_dir, sun), v);
     }
 
@@ -197,7 +197,7 @@ SphereTrace_v4 = register_shader_module("""
 @outputs col
 @dependencies SCENE_EXPRESSION, MatFloor_v4
 @vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO, _RAYCAST_MAX_STEPS, 
-@vardeps _ADD_FLOOR_PLANE, _RAYCAST_CONSERVATIVE_STEPPING_RATE
+@vardeps _RAYCAST_CONSERVATIVE_STEPPING_RATE
 MATPoint SphereTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
 
     MATPoint res;
@@ -224,18 +224,6 @@ MATPoint SphereTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
 
     float tmin = max(1.0, t0);
     float tmax = min(20.0, t1);
-
-    // 2) Floor-plane (y=0) test
-    // MAKE THIS OPTIONAL.
-    if (_ADD_FLOOR_PLANE) {
-        float tp = -ro.y / rd.y;
-        if (tp > 0.0 && tp < tmax) {
-            tmax = tp;
-            res.x = tp;
-            _h = true;
-            _s = 0;
-        }
-    }
 
     // 3) _AABB test
     vec3 inv_rd = 1.0 / rd;  // hoist reciprocal

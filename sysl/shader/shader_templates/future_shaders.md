@@ -1,3 +1,14 @@
+# Potential Future Renderers
+
+Here, I have added a few shadertoy examples that have stunning visualization. It would be cool to these as and when possible!
+
+
+https://www.shadertoy.com/view/dsdSW4
+https://www.shadertoy.com/view/cll3R4
+https://www.shadertoy.com/view/tl23Rm
+https://www.shadertoy.com/view/mlsSRN
+https://www.shadertoy.com/view/33BXW3
+https://www.shadertoy.com/view/4ftfWN
 
 # PBR
 1. https://www.shadertoy.com/view/3tlBW7
@@ -117,3 +128,5 @@ https://www.shadertoy.com/view/WdlXRN
 
 
 https://www.shadertoy.com/view/4tdyRj
+
+https://www.shadertoy.com/view/XctBz4

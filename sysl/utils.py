@@ -9,12 +9,12 @@ def recursive_gls_to_sysl(gls_expr, ind=0, version="v4", mode="complex", colors=
         if isinstance(gls_expr, PRIM_TYPE):
             if version == "v1":
                 new_expr = sls.MatSolidV1(gls_expr, 
-                sls.SMPLMaterial((float(ind),))
+                sls.MaterialV1((float(ind),))
                 )
             elif version == "v2":
                 color = tuple(np.random.rand(3).tolist())
                 new_expr = sls.MatSolidV2(gls_expr, 
-                sls.RGBMaterial(color))
+                sls.MaterialV2(color))
             elif version == "v3":
                 color = tuple(np.random.rand(3).tolist())
                 new_expr = sls.MatSolidV3(gls_expr, 
@@ -25,9 +25,9 @@ def recursive_gls_to_sysl(gls_expr, ind=0, version="v4", mode="complex", colors=
                 else:
                     color = colors[ind]
                 if mode == "simple":
-                    mat_expr = sls.SMPLMaterialV4(color, (0.0, 1.9))
+                    mat_expr = sls.MaterialV1V4(color, (0.0, 1.9))
                 else:
-                    mat_expr = sls.MaterialV4(color, (0.0, 0.0,0.0), (0.1, 0.9, 0.0,))
+                    mat_expr = sls.MaterialV4(color, (0.0, 0.0,0.0), (0.5, 0.2, 0.8,))
                 new_expr = sls.MatSolidV4(gls_expr, mat_expr)
             else:
                 raise ValueError(f"Invalid version: {version}")
@@ -46,22 +46,6 @@ def recursive_gls_to_sysl(gls_expr, ind=0, version="v4", mode="complex", colors=
     else:
         return gls_expr, ind
 
-
-def recursive_sysl_to_gls(sysl_expr):
-    if isinstance(sysl_expr, gls.GLBase):
-        if isinstance(sysl_expr, sls.Material):
-            return sysl_expr.args[0]
-        else:
-            new_args = []
-            for arg in sysl_expr.args:
-                if isinstance(arg, gls.GLBase):
-                    out_expr = recursive_sysl_to_gls(arg)
-                    new_args.append(out_expr)
-                else:
-                    new_args.append(arg)
-            return sysl_expr.__class__(*new_args)
-    else:
-        return sysl_expr
 
 
 

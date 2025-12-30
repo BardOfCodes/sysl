@@ -4,22 +4,59 @@ Offline Renderer for SySL Shaders using ModernGL.
 Provides two main functions:
 1. render_single_pass() - Renders output from evaluate_to_shader()
 2. render_multipass() - Renders output from evaluate_to_multipass_shader()
+
+Note: This module requires moderngl to be installed. It is an optional
+dependency - the rest of SySL works without it.
 """
 
 import re
 import os
 import base64
 import zlib
+import logging
 import numpy as np
 from typing import Dict, Any, Tuple, List, Optional
+
 from PIL import Image
 
-# Environment setup for headless rendering (must be before moderngl import)
-os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
-os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "3.3")
-os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "330")
+logger = logging.getLogger(__name__)
 
-import moderngl
+# ModernGL is imported lazily - see _ensure_moderngl()
+_moderngl = None
+
+
+def _ensure_moderngl():
+    """
+    Lazily import moderngl and return it.
+    
+    Raises ImportError with helpful message if moderngl is not installed.
+    """
+    global _moderngl
+    if _moderngl is None:
+        try:
+            import moderngl
+            _moderngl = moderngl
+        except ImportError:
+            raise ImportError(
+                "moderngl is required for offline rendering but is not installed. "
+                "Install it with: pip install moderngl"
+            )
+    return _moderngl
+
+
+def setup_headless_env():
+    """
+    Configure environment variables for headless OpenGL rendering.
+    
+    Sets PYOPENGL_PLATFORM, MESA_GL_VERSION_OVERRIDE, and 
+    MESA_GLSL_VERSION_OVERRIDE if not already set.
+    
+    Call this before any OpenGL operations when running headless.
+    """
+    os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
+    os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "3.3")
+    os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "330")
+
 
 # =============================================================================
 # GLSL Conversion Utilities
@@ -71,8 +108,7 @@ def decode_texture_data(texture_info: Dict[str, Any]) -> np.ndarray:
     return data.reshape(shape)
 
 
-def create_texture(ctx: moderngl.Context, 
-                   texture_info: Dict[str, Any]) -> moderngl.Texture:
+def create_texture(ctx, texture_info: Dict[str, Any]):
     """
     Create a ModernGL texture from texture info dict.
     
@@ -98,10 +134,9 @@ def create_texture(ctx: moderngl.Context,
         raise ValueError(f"Unsupported texture shape: {shape}")
 
 
-def _create_texture_2d(ctx: moderngl.Context, 
-                       data: np.ndarray, 
-                       dtype: str) -> moderngl.Texture:
+def _create_texture_2d(ctx, data: np.ndarray, dtype: str):
     """Create a 2D texture from numpy data (H, W, C)."""
+    moderngl = _ensure_moderngl()
     H, W, C = data.shape
     
     # Ensure contiguous and correct dtype
@@ -124,10 +159,9 @@ def _create_texture_2d(ctx: moderngl.Context,
     return texture
 
 
-def _create_texture_3d(ctx: moderngl.Context, 
-                       data: np.ndarray, 
-                       dtype: str) -> moderngl.Texture3D:
+def _create_texture_3d(ctx, data: np.ndarray, dtype: str):
     """Create a 3D texture from numpy data (D, H, W, C)."""
+    moderngl = _ensure_moderngl()
     D, H, W, C = data.shape
     
     # Ensure contiguous and correct dtype
@@ -153,9 +187,7 @@ def _create_texture_3d(ctx: moderngl.Context,
 # Uniform Utilities
 # =============================================================================
 
-def set_uniform(prog: moderngl.Program, 
-                name: str, 
-                info: Dict[str, Any]) -> bool:
+def set_uniform(prog, name: str, info: Dict[str, Any]) -> bool:
     """
     Set a uniform value in the shader program.
     
@@ -167,6 +199,8 @@ def set_uniform(prog: moderngl.Program,
     Returns:
         True if uniform was set, False if not found or failed
     """
+    moderngl = _ensure_moderngl()
+    
     if name not in prog:
         return False
     
@@ -204,7 +238,8 @@ def set_uniform(prog: moderngl.Program,
         else:
             return False
         return True
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to set uniform '{name}' (type={utype}): {e}")
         return False
 
 
@@ -237,7 +272,8 @@ def render_single_pass(
     shader_code: str,
     uniforms: Dict[str, Dict[str, Any]],
     textures: Dict[str, Dict[str, Any]],
-    size: Tuple[int, int] = (512, 512)
+    size: Tuple[int, int] = (512, 512),
+    setup_env: bool = True
 ) -> np.ndarray:
     """
     Render a single-pass shader to an image.
@@ -249,10 +285,21 @@ def render_single_pass(
         uniforms: Dict of uniform name -> {type, init_value, ...}
         textures: Dict of texture name -> {data_b64, shape, dtype, ...}
         size: Output image size (width, height)
+        setup_env: If True, configure environment for headless rendering.
+                   Set to False if you've already configured the environment
+                   or want to manage it yourself.
         
     Returns:
         numpy array of shape (H, W, 3) with RGB image data (uint8)
+        
+    Raises:
+        ImportError: If moderngl is not installed
     """
+    moderngl = _ensure_moderngl()
+    
+    if setup_env:
+        setup_headless_env()
+    
     W, H = size
     
     # Create context
@@ -323,7 +370,8 @@ def render_single_pass(
 
 def render_multipass(
     passes: List[Dict[str, Any]],
-    size: Optional[Tuple[int, int]] = None
+    size: Optional[Tuple[int, int]] = None,
+    setup_env: bool = True
 ) -> np.ndarray:
     """
     Render a multi-pass shader pipeline to an image.
@@ -338,10 +386,21 @@ def render_multipass(
             - input_FBOs: List of input FBO specs
             - output_FBO: Output FBO spec or dict with 'name': 'image'
         size: Optional output size override. If None, uses FBO sizes from passes.
+        setup_env: If True, configure environment for headless rendering.
+                   Set to False if you've already configured the environment
+                   or want to manage it yourself.
         
     Returns:
         numpy array of shape (H, W, 3) with RGB image data (uint8)
+        
+    Raises:
+        ImportError: If moderngl is not installed
     """
+    moderngl = _ensure_moderngl()
+    
+    if setup_env:
+        setup_headless_env()
+    
     # Create context
     ctx = _create_context()
     
@@ -363,10 +422,10 @@ def render_multipass(
         vbo = ctx.buffer(FULLSCREEN_QUAD)
         
         # FBO registry: name -> (texture, fbo)
-        fbo_registry: Dict[str, Tuple[moderngl.Texture, moderngl.Framebuffer]] = {}
+        fbo_registry: Dict[str, Tuple] = {}
         
         # Texture registry for user textures (from shader)
-        user_textures: Dict[str, moderngl.Texture] = {}
+        user_textures: Dict[str, Any] = {}
         
         # Process each pass
         final_image = None
@@ -472,8 +531,9 @@ def render_multipass(
 # Helper Functions
 # =============================================================================
 
-def _create_context() -> moderngl.Context:
+def _create_context():
     """Create a ModernGL standalone context with fallbacks."""
+    moderngl = _ensure_moderngl()
     try:
         return moderngl.create_standalone_context(require=330)
     except Exception:
@@ -483,10 +543,7 @@ def _create_context() -> moderngl.Context:
             raise RuntimeError(f"Failed to create OpenGL context: {e}")
 
 
-def _create_fbo(ctx: moderngl.Context, 
-                width: int, 
-                height: int, 
-                fbo_type: str) -> Tuple[moderngl.Texture, moderngl.Framebuffer]:
+def _create_fbo(ctx, width: int, height: int, fbo_type: str):
     """
     Create an FBO with appropriate format.
     
@@ -499,6 +556,8 @@ def _create_fbo(ctx: moderngl.Context,
     Returns:
         Tuple of (texture, framebuffer)
     """
+    moderngl = _ensure_moderngl()
+    
     type_to_components = {
         'float': 1,
         'vec2': 2,

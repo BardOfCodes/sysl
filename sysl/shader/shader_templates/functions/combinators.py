@@ -6,7 +6,7 @@ using the template definitions and shader module classes.
 """
 
 from ...shader_module import SMMap
-from ...shader_module_classes import NAryShaderModule, FixedArityShaderModule
+from ...shader_mod_ext import NAryShaderModule, FixedArityShaderModule
 from .combinator_templates import (
     DIFF_ARITY_MAP,
     SWITCHED_DIFF_ARITY_MAP,
@@ -15,10 +15,11 @@ from .combinator_templates import (
     GEOM_ONLY_SMOOTH_UNION_ARITY_MAP,
     SMOOTH_INTERSECTION_ARITY_MAP,
     SMOOTH_DIFFERENCE_ARITY_MAP,
+    XOR_ARITY_MAP,
     DILATE_ARITY_MAP,
     ERODE_ARITY_MAP,
     ONION_ARITY_MAP,
-    NEG_ONLY_ONION_ARITY_MAP
+    NEG_ONLY_ONION_ARITY_MAP,
 )
 
 
@@ -84,6 +85,11 @@ def smooth_difference_factory():
     module = FixedArityShaderModule(name, SMOOTH_DIFFERENCE_ARITY_MAP)
     return module
 
+def xor_factory():
+    """Create a XOR shader module."""
+    name = "XOR"
+    module = FixedArityShaderModule(name, XOR_ARITY_MAP)
+    return module
 
 def dilate_factory():
     """Create a Dilate3D shader module."""
@@ -112,7 +118,6 @@ def neg_only_onion_factory():
     module = FixedArityShaderModule(name, NEG_ONLY_ONION_ARITY_MAP)
     return module
 
-
 # Register all factory functions in the shader module map
 SMMap["Union"] = union_factory
 SMMap["Intersection"] = intersection_factory
@@ -123,6 +128,7 @@ SMMap["SmoothUnion"] = smooth_union_factory
 SMMap["GeomOnlySmoothUnion"] = geom_only_smooth_union_factory
 SMMap["SmoothIntersection"] = smooth_intersection_factory
 SMMap["SmoothDifference"] = smooth_difference_factory
+SMMap["XOR"] = xor_factory
 SMMap["Dilate3D"] = dilate_factory
 SMMap["Erode3D"] = erode_factory
 SMMap["Onion3D"] = onion_factory

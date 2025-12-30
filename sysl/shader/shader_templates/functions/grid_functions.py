@@ -2,29 +2,10 @@
 # Custom nodes.
 import numpy as np
 from ...shader_module import register_shader_module, ShaderModule, SMMap
+from ...shader_mod_ext import CustomFunctionShaderModule
 from string import Template
 
 LOW_PRECISION_RANGE = np.sqrt(0.5)
-
-class CustomFunctionShaderModule(ShaderModule):
-
-    def __init__(self, name=None, template=None, *args, **kwargs):
-        code = None
-        dependencies = []
-        vardeps = []
-        inputs = None
-        outputs = None
-        if name is None:
-          name = "CustomFunction"
-        super().__init__(name, code, dependencies=dependencies, vardeps=vardeps, inputs=inputs, outputs=outputs)
-        self.function_names = set()
-        self.template = template
-    
-    def register_hit(self, *args, **kwargs):
-        raise NotImplementedError("Not implemented")
-
-    def generate_code(self):
-        raise NotImplementedError("Not implemented")
 
 EncodedSDFGrid3DTemplate = Template("""
 float ${func_name}( vec3 p )

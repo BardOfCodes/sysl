@@ -101,7 +101,8 @@ vec3 ShadeRay(DirectionalLight sun, vec3 ro, vec3 rd, out int steps) {
         return background(rd, sun);
 
     // Compute normal
-    vec3 n = SCENE_NORMAL(pt);
+    // vec3 n = SCENE_NORMAL(pt);
+    vec3 n = (res.y < 0.0) ? vec3(0.0, 1.0, 0.0) : SCENE_NORMAL(pt);
 
     // Shade object with light
     Material mat = SCENE_MATERIAL(pt, n, res.y);
@@ -114,13 +115,14 @@ vec3 ShadeRay(DirectionalLight sun, vec3 ro, vec3 rd, out int steps) {
 
         // secondary ray
         s = 0;
-        res = SphereTrace(pt+n*0.01, reflect_dir, 100.0, hit, s);
+        res = SphereTrace(pt+n*0.0001, reflect_dir, 100.0, hit, s);
         t = res.x;
         steps += s;
 
         if (hit) {
             vec3 rpt = pt + t * reflect_dir;
-            vec3 rn = SCENE_NORMAL(rpt);
+            //vec3 rn = SCENE_NORMAL(rpt);
+            vec3 rn = (res.y <= 0.0) ? vec3(0.0, 1.0, 0.0) : SCENE_NORMAL(rpt);
             Material rmat = SCENE_MATERIAL(rpt, rn, res.y);
 
             vec3 sec_reflection = Env(reflect(reflect_dir, rn), sun);
@@ -133,7 +135,7 @@ vec3 ShadeRay(DirectionalLight sun, vec3 ro, vec3 rd, out int steps) {
         reflection = clearcoat;
     else {
         float r = 1.0/max(mat.roughness, 0.00001);
-        float v = Shadow(pt+n*0.1, reflect_dir, 1000.0, r);
+        float v = Shadow(pt+n*0.0001, reflect_dir, 1000.0, r);
         reflection = mix(SkyAmbient(sun)*0.1, Env(reflect_dir, sun), v);
     }
 
@@ -153,7 +155,7 @@ SphereTrace = register_shader_module("""
 @outputs col
 @dependencies SCENE_EXPRESSION
 @vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO, _RAYCAST_MAX_STEPS, 
-@vardeps _ADD_FLOOR_PLANE, _RAYCAST_CONSERVATIVE_STEPPING_RATE
+@vardeps _RAYCAST_CONSERVATIVE_STEPPING_RATE
 vec2 SphereTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
 
     vec2 res = vec2(-1.0,-1.0);
@@ -179,18 +181,6 @@ vec2 SphereTrace(in vec3 ro, in vec3 rd, float e, out bool _h,out int _s){
 
     float tmin = max(1.0, t0);
     float tmax = min(20.0, t1);
-
-    // 2) Floor-plane (y=0) test
-    // MAKE THIS OPTIONAL.
-    if (_ADD_FLOOR_PLANE) {
-        float tp = -ro.y / rd.y;
-        if (tp > 0.0 && tp < tmax) {
-            tmax = tp;
-            res = vec2(tp, 1.0);
-            _h = true;
-            _s = 0;
-        }
-    }
 
     // 3) _AABB test
     vec3 inv_rd = 1.0 / rd;  // hoist reciprocal

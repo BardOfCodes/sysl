@@ -218,3 +218,22 @@ class FixedArityShaderModule(ShaderModule):
         return self.code
 
 
+class CustomFunctionShaderModule(ShaderModule):
+
+    def __init__(self, name=None, template=None, *args, **kwargs):
+        code = None
+        dependencies = []
+        vardeps = []
+        inputs = None
+        outputs = None
+        if name is None:
+          name = "CustomFunction"
+        super().__init__(name, code, dependencies=dependencies, vardeps=vardeps, inputs=inputs, outputs=outputs)
+        self.function_names = set()
+        self.template = template
+    
+    def register_hit(self, *args, **kwargs):
+        raise NotImplementedError("Not implemented")
+
+    def generate_code(self):
+        raise NotImplementedError("Not implemented")

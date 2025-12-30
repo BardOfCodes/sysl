@@ -2,6 +2,7 @@
 from ..shader_module import register_shader_module, SMMap
 from string import Template
 import numpy as np
+from .multipass.sdf_trace import p_code_AA_N, p_code_AA_1, offset_template, mainSDFTrace
 
 
 raycast_post_trace = register_shader_module("""
@@ -102,12 +103,8 @@ vec3 render_post_trace(in vec3 ro, in vec3 rd, in vec3 rdx, in vec3 rdy, vec3 li
     return mix(color, bg, fogFactor);
 }""")
 
-mainImage_post_trace = register_shader_module("""
-@name mainImage_post_trace_v1
-@inputs fragColor, fragCoord
-@outputs fragColor
-@dependencies setCamera_v1, getSunDirection_v1, render_post_trace
-@vardeps _AA, cameraOrigin, cameraDistance, cameraAngleX, cameraAngleY, resolution, _FOCAL_LENGTH, _ZERO
+mainImage_post_trace_template = Template("""
+${offsets_fill}
 void mainImage_post_trace( out vec4 fragColor, in vec2 fragCoord )
 {
     vec2 mo = vec2(0.0, 0.0);
@@ -122,50 +119,58 @@ void mainImage_post_trace( out vec4 fragColor, in vec2 fragCoord )
     mat3 ca = setCamera( ro, ta, 0.0 );
     float dist = texelFetch(distance_travelled, ivec2(fragCoord), 0).r;
 
-    vec3 tot = vec3(0.0);
     vec3 lig = getSunDirection();
-    for( int m=_ZERO; m<_AA; m++ )
-    for( int n=_ZERO; n<_AA; n++ )
-    {
-        // pixel coordinates
-        vec2 o = vec2(float(m),float(n)) / float(_AA) - 0.5;
 
-        vec2 p = (2.0*(fragCoord+o)-resolution.xy)/resolution.xy;
+    //vec2 p = (2.0*(fragCoord)-resolution.xy)/resolution.xy;
+    ${p_code}
 
-        vec3 rd = ca * normalize( vec3(p, _FOCAL_LENGTH) );
+    vec3 rd = ca * normalize( vec3(p, _FOCAL_LENGTH) );
 
-        vec2 px = (2.0 * (fragCoord + vec2(1.0, 0.0)) - resolution.xy) / resolution.xy;
-        vec2 py = (2.0 * (fragCoord + vec2(0.0, 1.0)) - resolution.xy) / resolution.xy;
+    vec2 px = (2.0 * (fragCoord + vec2(1.0, 0.0)) - resolution.xy) / resolution.xy;
+    vec2 py = (2.0 * (fragCoord + vec2(0.0, 1.0)) - resolution.xy) / resolution.xy;
 
-        vec3 rdx = ca * normalize(vec3(px, _FOCAL_LENGTH));
-        vec3 rdy = ca * normalize(vec3(py, _FOCAL_LENGTH));
+    vec3 rdx = ca * normalize(vec3(px, _FOCAL_LENGTH));
+    vec3 rdy = ca * normalize(vec3(py, _FOCAL_LENGTH));
 
-        // render	
-        vec3 start_pos = ro;
-        vec3 col = render_post_trace( start_pos, rd, rdx, rdy , lig, dist);
-        
-        // TODO: optionally introduce other post processing steps here.
-
-        // gain
-        // col = col*3.0/(2.5+col);
-        
-		// gamma
-        col = pow( col, vec3(0.4545) );
-
-        tot += col;
-    }
-    tot /= float(_AA*_AA);
+    // render	
+    vec3 start_pos = ro;
+    vec3 col = render_post_trace( start_pos, rd, rdx, rdy , lig, dist);
     
-    fragColor = vec4( tot, 1.0 );
+    // TODO: optionally introduce other post processing steps here.
+
+    // gain
+    // col = col*3.0/(2.5+col);
+    
+    // gamma
+    col = pow( col, vec3(0.4545) );
+    
+    fragColor = vec4( col, 1.0 );
 }""")
 
+class mainImagePostTraceV1(mainSDFTrace):
+
+    def __init__(self, name=None, template=None, *args, **kwargs):
+        if template is None:
+            template = mainImage_post_trace_template
+        if name is None:
+            name = "main_sdf_trace"
+
+        super().__init__(name, template, *args, **kwargs)
+        self.dependencies = ["setCamera_v1", "getSunDirection_v1", "render_post_trace"]
+        self.vardeps = ["_AA", "cameraOrigin", "cameraDistance", "cameraAngleX", "cameraAngleY", "resolution", "_FOCAL_LENGTH", "_ZERO"]
+        self.inputs = ["fragColor", "fragCoord"]
+        self.outputs = ["fragColor"]
+        self.aa = 1
+
+SMMap['mainImage_post_trace_v1'] = mainImagePostTraceV1
 
 raycast_post_trace_v2 = register_shader_module("""
 @name raycast_post_trace_v2
 @inputs ro, rd, rdx, rdy, lig
 @outputs col
 @dependencies SCENE_EXPRESSION
-@vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO, _RAYCAST_MAX_STEPS, _ADD_FLOOR_PLANE
+@vardeps _SCENE_RADIUS, _SCENE_BOX_CENTER, _SCENE_BOX_SIZE, _ZERO, 
+@vardeps _RAYCAST_MAX_STEPS, _ADD_FLOOR_PLANE, _RAYCAST_CONSERVATIVE_STEPPING_RATE
 vec4 raycast_post_trace_v2(in vec3 ro, in vec3 rd, float dist) {
 
     vec4 res = vec4(-1.0);
@@ -216,7 +221,7 @@ vec4 raycast_post_trace_v2(in vec3 ro, in vec3 rd, float dist) {
                 res = vec4(t, h.yzw);
                 break;
             }
-            t += h.x;
+            t += h.x * _RAYCAST_CONSERVATIVE_STEPPING_RATE;
         }
     }
 
@@ -242,7 +247,8 @@ vec3 render_post_trace(in vec3 ro, in vec3 rd, in vec3 rdx, in vec3 rdy, vec3 li
     float t  = hit.x;
     vec3 m  = vec3(hit.yzw);
     vec3  pos = ro + rd * t;
-    vec3  nor = calcNormal(pos);
+    // vec3  nor = calcNormal(pos);
+    vec3  nor = (m.x < 0.0) ? vec3(0.0, 1.0, 0.0) : calcNormal(pos);
     vec3  ref = reflect(rd, nor);
 
     // Material determination

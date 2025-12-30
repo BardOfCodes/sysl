@@ -65,7 +65,7 @@ Torus3D = register_shader_module("""
 @inputs pos, size, radius
 @outputs dist
 @dependencies
-float sdTorus( vec3 p, vec2 t )
+float Torus3D( vec3 p, vec2 t )
 {
   vec2 q = vec2(length(p.xz)-t.x,p.y);
   return length(q)-t.y;
@@ -76,8 +76,9 @@ CappedTorus3D = register_shader_module("""
 @inputs pos, size, angle, ra, rb
 @outputs dist
 @dependencies
-float CappedTorus3D( vec3 p, vec2 sc, float ra, float rb)
+float CappedTorus3D( vec3 p, float angle, float ra, float rb)
 {
+  vec2 sc = vec2(sin(angle), cos(angle));
   p.x = abs(p.x);
   float k = (sc.y*p.x>sc.x*p.y) ? dot(p.xy,sc) : length(p.xy);
   return sqrt( dot(p,p) + ra*ra - 2.0*ra*k ) - rb;
@@ -111,7 +112,7 @@ Cone3D = register_shader_module("""
 @dependencies
 float Cone3D( vec3 p, float angle, float h )
 {
-  vec2 c = vec2(cos(angle), sin(angle));
+  vec2 c = vec2(sin(angle), cos(angle));
   // c is the sin/cos of the angle, h is height
   // Alternatively pass q instead of (c,h),
   // which is the point at the base in 2D
@@ -131,8 +132,9 @@ InexactCone3D = register_shader_module("""
 @inputs pos, angle, height
 @outputs dist
 @dependencies
-float InexactCone3D( vec3 p, vec2 c, float h )
+float InexactCone3D( vec3 p, float angle, float h )
 {
+  vec2 c = vec2(sin(angle), cos(angle));
   float q = length(p.xz);
   return max(dot(c.xy,vec2(q,p.y)),-h-p.y);
 }""")
@@ -142,9 +144,9 @@ InfiniteCone3D = register_shader_module("""
 @inputs pos, angle
 @outputs dist
 @dependencies
-float InfiniteCone3D( vec3 p, vec2 c )
+float InfiniteCone3D( vec3 p, float angle )
 {
-    // c is the sin/cos of the angle
+    vec2 c = vec2(sin(angle), cos(angle));
     vec2 q = vec2( length(p.xz), -p.y );
     float d = length(q-c*max(dot(q,c), 0.0));
     return d * ((q.x*c.y-q.y*c.x<0.0)?-1.0:1.0);
@@ -279,8 +281,8 @@ CappedCone3D = register_shader_module("""
 @name CappedCone3D
 @inputs pos, height, radius
 @outputs dist
-@dependencies
-float CappedCone3D( vec3 p, float h, float r1, float r2 )
+@dependencies dot2
+float CappedCone3D( vec3 p, float r1, float r2, float h)
 {
   vec2 q = vec2( length(p.xz), p.y );
   vec2 k1 = vec2(r2,h);
@@ -291,12 +293,12 @@ float CappedCone3D( vec3 p, float h, float r1, float r2 )
   return s*sqrt( min(dot2(ca),dot2(cb)) );
 }""")
 
-ArbitraryCappedCone = register_shader_module("""
-@name ArbitraryCappedCone
+ArbitraryCappedCone3D = register_shader_module("""
+@name ArbitraryCappedCone3D
 @inputs pos, a, b, ra, rb
 @outputs dist
 @dependencies
-float sdCappedCone( vec3 p, vec3 a, vec3 b, float ra, float rb )
+float ArbitraryCappedCone3D( vec3 p, vec3 a, vec3 b, float ra, float rb )
 {
   float rba  = rb-ra;
   float baba = dot(b-a,b-a);
@@ -319,9 +321,10 @@ SolidAngle3D = register_shader_module("""
 @inputs pos, angle, radius
 @outputs dist
 @dependencies
-float SolidAngle3D( vec3 p, vec2 c, float ra )
+float SolidAngle3D( vec3 p, float angle , float ra )
 {
   // c is the sin/cos of the angle
+  vec2 c = vec2(sin(angle), cos(angle));
   vec2 q = vec2( length(p.xz), p.y );
   float l = length(q) - ra;
   float m = length(q - c*clamp(dot(q,c),0.0,ra) );
@@ -387,7 +390,7 @@ RoundCone3D = register_shader_module("""
 @inputs pos, height, radius
 @outputs dist
 @dependencies
-float sdRoundCone( vec3 p, float r1, float r2, float h )
+float RoundCone3D( vec3 p, float r1, float r2, float h )
 {
   // sampling independent computations (only depend on shape)
   float b = (r1-r2)/h;
@@ -405,7 +408,7 @@ ArbitraryRoundCone3D = register_shader_module("""
 @name ArbitraryRoundCone3D
 @inputs pos, a, b, r1, r2
 @outputs dist
-@dependencies
+@dependencies dot2
 float ArbitraryRoundCone3D( vec3 p, vec3 a, vec3 b, float r1, float r2 )
 {
   // sampling independent computations (only depend on shape)
@@ -466,7 +469,7 @@ Rhombus3D = register_shader_module("""
 @name Rhombus3D
 @inputs pos, la, lb, h, ra
 @outputs dist
-@dependencies
+@dependencies ndot
 float Rhombus3D( vec3 p, float la, float lb, float h, float ra )
 {
   p = abs(p);
@@ -537,7 +540,7 @@ Triangle3D = register_shader_module("""
 @name Triangle3D
 @inputs pos, a, b, c
 @outputs dist
-@dependencies
+@dependencies dot2
 float Triangle3D( vec3 p, vec3 a, vec3 b, vec3 c )
 {
   vec3 ba = b - a; vec3 pa = p - a;
@@ -562,8 +565,8 @@ Quadrilateral3D = register_shader_module("""
 @name Quadrilateral3D
 @inputs pos, a, b, c, d
 @outputs dist
-@dependencies
-float udQuad( vec3 p, vec3 a, vec3 b, vec3 c, vec3 d )
+@dependencies dot2
+float Quadrilateral3D( vec3 p, vec3 a, vec3 b, vec3 c, vec3 d )
 {
   vec3 ba = b - a; vec3 pa = p - a;
   vec3 cb = c - b; vec3 pb = p - b;
@@ -593,7 +596,7 @@ NoParamCuboid3D = register_shader_module("""
 @dependencies
 float NoParamCuboid3D( vec3 p )
 {
-  return length(max(abs(p)-vec3(1.0),0.0));
+  return length(max(abs(p)-vec3(0.5),0.0));
 }""")
 
 NoParamSphere3D = register_shader_module("""
@@ -603,7 +606,7 @@ NoParamSphere3D = register_shader_module("""
 @dependencies
 float NoParamSphere3D( vec3 p )
 {
-  return length(p)-1.0;
+  return length(p)-0.5;
 }""")
 
 NoParamCylinder3D = register_shader_module("""
@@ -613,7 +616,10 @@ NoParamCylinder3D = register_shader_module("""
 @dependencies
 float NoParamCylinder3D( vec3 p )
 {
-  return length(p.xz)-1.0;
+  float r_val = length(p.xz) - 0.5;
+  float h_val = abs(p.y) - 0.5;
+  vec2 cval = vec2(r_val, h_val);
+  return min(max(cval.x, cval.y), 0.0) + length(max(cval, 0.0));
 }""")
 
 InexactSuperQuadrics3D = register_shader_module("""
@@ -642,9 +648,38 @@ InexactAnisotropicGaussian3D = register_shader_module("""
 @inputs pos, center, axial_radii, scale_constant
 @outputs dist
 @dependencies
-float InexactAnisotropicGaussian3D( vec3 p, vec3 center, vec3 axial_radii, float scale_constant )
+float InexactAnisotropicGaussian3D(
+    vec3 p,
+    vec3 center,
+    vec3 axial_radii,
+    float scale_constant
+) {
+    vec3 d = p - center;
+    vec3 q = -(d * d) / (2.0 * axial_radii * axial_radii);
+    float base_sdf = scale_constant * exp(q.x + q.y + q.z);
+    return base_sdf;
+}""")
+
+SimpleExtrusion3D = register_shader_module("""
+@name SimpleExtrusion3D
+@inputs pos, sdf2d, height
+@outputs dist
+@dependencies
+float SimpleExtrusion3D( vec3 p, float sdf2d, float height )
 {
-  vec3 q = -((p - center) ** 2) / (2 * axial_radii ** 2);
-  float base_sdf = scale_constant * exp(q.x + q.y + q.z);
-  return base_sdf;
+  float h_val = abs(p.y) - height/2.0;
+  vec2 cval = vec2(sdf2d, h_val);
+  return min(max(cval.x, cval.y), 0.0) + length(max(cval, 0.0));
+}""")
+
+
+SimpleRevolution3D = register_shader_module("""
+@name SimpleRevolution3D
+@inputs pos, sdf2d, height
+@outputs dist
+@dependencies
+vec2 SimpleRevolution3D( vec3 p, float o)
+{
+    vec2 q = vec2( length(p.xz) - o, p.y );
+    return q;
 }""")

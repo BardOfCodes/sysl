@@ -1,4 +1,10 @@
-# Goal geolipi. 
+"""
+Field definitions for SySL - volumetric data like SDF grids and RGB textures.
+
+These classes represent grid-based data that can be used for geometry (SDF) 
+or appearance (RGB textures) in scene expressions.
+"""
+
 
 from geolipi.symbolic import GLFunction
 import geolipi.symbolic as gls
@@ -12,7 +18,7 @@ class RGBGrid3D(GLFunction):
     @classmethod
     def default_spec(cls):
         return {
-            "rbg_grid": {"type": "Tensor[float,(D,H,W,3)]"},
+            "rgb_grid": {"type": "Tensor[float,(D,H,W,3)]"},
             "name": {"type": "string"},
             "metallic": {"type": "Tensor[float,(D,H,W)]"},
             "roughness": {"type": "Tensor[float,(D,H,W)]"},
@@ -24,12 +30,13 @@ class SphericalRGBGrid3D(GLFunction):
     @classmethod
     def default_spec(cls):
         return {
-            "rbg_grid": {"type": "Tensor[float,(H,W,3)]"},
+            "rgb_grid": {"type": "Tensor[float,(H,W,3)]"},
             "name": {"type": "string"},
             "metallic": {"type": "Tensor[float,(H,W)]"},
             "roughness": {"type": "Tensor[float,(H,W)]"},
             "bound_threshold": {"type": "float", "optional": True}
         }
+        
 # ===== Encoded SDF Grid 3D =====
 
 @register_symbol

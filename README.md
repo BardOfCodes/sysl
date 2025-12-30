@@ -1,5 +1,32 @@
 # SySL: Symbolic Scene Language
+# Version support documentation: 
+
+1. Basic Inigo. Simplest Fastest but not strong color control
+2. Basic Inigo + Color Support
+3. Basic Matthieu: Different Lighting etc + Material Functions (p, n).
+4. Basic Matthieu + Local Material Functions (n)+ Material Mixing + Simpler Material Desc + Material Textures. 
+
+# Multipass Basic:
+
+1. Split traversal one for just Distance and ID. 
+2. Second for Material based coloring. 
+3. Add tirtiary pass for outlines / rm bg etc. (shape Outline, selection outline, )
+4. Fourth pass for AA. 
+
+
 ## December 1:
+
+1. Support Extrude, and check all the 2D and 3D shapes.
+2. Support Macros
+3. Check all the compositional operators and Transforms.
+4. Make all existing shader code versions work in single pass and multipass mode. 
+5. Add the remaining Shaders.
+6. Create a good Readme file.
+7. Update Geolipi to link to this and show results from here too.
+
+# Next would be ASMBLR, ASMBLR_Front, ASMBLR_Back. 
+# Next Migumi and ResFit Opt. 
+# 
 
 Release goals: 
 
@@ -12,19 +39,22 @@ Release goals:
     1. V1 is Inigo's Simple Renderer. 
     2. V2 is Inigo Simple + color. 
     3. V3 is Matthieu Jaquemet https://www.shadertoy.com/view/3tKfDG
-    4. V4 is Ours. 
+    4. V4 is Adapted Matthieu. 
     5. V5 is Toon Shader
     6. V6 is PBR
     7. V7 is Poisson.
 
+3. Must support the full support of 2D and 3D geom expressions. Basic Extrusion Primitive, and Basic Revolution Primitive. 
+
 3. Geometry -> A lot of symbolic expressions for things - GeoLIPI + MXG + eventually SW 2D patterns for materials. 
 
+# Applications to show:
 
-1. Render your implicits without going to meshes for paper ready quality renders. 
-2. Check SDF field more easily by slicing the expression online with planes. 
-3. Render target Voxels with grid lines cleanly. 
-4. Create dynamic 3D scenes for the web simply. 
-5. Record optimization and replay. 
+1. Render your implicits (prim Assemblies) without going to meshes for paper ready quality renders. 
+2. Create Edit 3D scenes for the web simply.
+3. Record optimization and replay. 
+4. Render target Voxels with grid lines cleanly. 
+5. Check SDF field more easily by slicing the expression online with planes. 
 
 
 # Generate the renders. 
@@ -133,7 +163,7 @@ pip install -r requirements.txt
 import geolipi.symbolic as gls
 import sysl.symbolic as sls
 from sysl.shader.evaluate import evaluate_to_shader
-from sysl.shader_vis.generate_shader_html import create_shader_html, make_jupyter_compatible_html
+from sysl.shader_runtime.generate_shader_html import create_shader_html, make_jupyter_compatible_html
 from IPython.display import display, HTML
 
 # Create basic shapes

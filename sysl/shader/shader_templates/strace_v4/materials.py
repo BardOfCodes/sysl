@@ -48,7 +48,7 @@ MatFloor = register_shader_module("""
 @dependencies BaseMaterials_v4, Voronoi, Fbm
 @vardeps 
 
-Material MatFloor(vec3 p, vec3 n) {
+Material MatFloor(vec3 p) {
 
     Material mat;
 
@@ -78,7 +78,7 @@ MatCarCoat = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, Noise
 @vardeps 
-Material MatCarCoat(vec3 p, vec3 n) {
+Material MatCarCoat(vec3 p) {
 
     Material mat;
 
@@ -97,7 +97,7 @@ MatAmbers = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, FbmVoronoi, Noise, Voronoi, Fbm
 @vardeps iTime
-Material MatAmbers(vec3 p, vec3 n) {
+Material MatAmbers(vec3 p) {
 
     Material mat;
 
@@ -129,7 +129,7 @@ MatWood = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, Fbm, FbmVoronoi
 @vardeps 
-Material MatWood(vec3 p, vec3 n) {
+Material MatWood(vec3 p) {
 
     Material mat;
 
@@ -153,7 +153,7 @@ MatBurnedWood = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, MatRotateZ, Fbm, MatWood, MatAmbers
 @vardeps 
-Material MatBurnedWood(vec3 p, vec3 n) {
+Material MatBurnedWood(vec3 p) {
 
     Material mat;
 
@@ -161,8 +161,8 @@ Material MatBurnedWood(vec3 p, vec3 n) {
 
     float fact = smoothstep(0.5, 0.55, Fbm(p*0.14, 5));
 
-    Material wood = MatWood(p, n);
-    Material ambers = MatAmbers(p, n);
+    Material wood = MatWood(p);
+    Material ambers = MatAmbers(p);
 
     return MixMaterial(wood, ambers, fact);
 }""")
@@ -174,7 +174,7 @@ MatMoss = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, Noise, Fbm
 @vardeps 
-Material MatMoss(vec3 p ,vec3 n) {
+Material MatMoss(vec3 p) {
     
     Material mat;
 
@@ -201,7 +201,7 @@ MatSoil = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, FbmVoronoi, MatMoss, Voronoi
 @vardeps 
-Material MatSoil(vec3 p, vec3 n) {
+Material MatSoil(vec3 p) {
 
     Material mat;
 
@@ -210,7 +210,7 @@ Material MatSoil(vec3 p, vec3 n) {
     stone = max(stone, Fbm(p*0.5, 4));
     stone = pow(sat(stone), 2.0)*0.7;
 
-    Material moss = MatMoss(p, n);
+    Material moss = MatMoss(p);
     float t = min(pow(Voronoi(p*0.75).x + 0.2, 5.0), 1.0);
     // float fact = 
     mat.albedo = vec3(stone);
@@ -226,7 +226,7 @@ MatMarble = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, Fbm, Voronoi
 @vardeps 
-Material MatMarble(vec3 p, vec3 n) {
+Material MatMarble(vec3 p) {
 
     Material mat;
 
@@ -248,7 +248,7 @@ MatGranite = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, Fbm
 @vardeps 
-Material MatGranite(vec3 p, vec3 n) {
+Material MatGranite(vec3 p) {
 
     Material mat;
 
@@ -272,7 +272,7 @@ MatLava = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, FbmVoronoi
 @vardeps iTime
-Material MatLava(vec3 p, vec3 n) {
+Material MatLava(vec3 p) {
 
     Material mat;
     float fact = pow(FbmVoronoi(p*0.5 + vec3(0,0,iTime*0.2), 3).x*1.2, 3.0);
@@ -292,7 +292,7 @@ MatRust = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, Fbm, Noise
 @vardeps 
-Material MatRust(vec3 p, vec3 n) {
+Material MatRust(vec3 p) {
 
     Material mat;
 
@@ -311,7 +311,7 @@ MatRustedMetal = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, Fbm, MatRust
 @vardeps 
-Material MatRustedMetal(vec3 p, vec3 n) {
+Material MatRustedMetal(vec3 p) {
 
     Material mat;
 
@@ -320,7 +320,7 @@ Material MatRustedMetal(vec3 p, vec3 n) {
     mat.albedo = vec3(var*0.1 + 0.2);
     mat.mrc.xy = vec2(1.0, var*0.2+0.1);
 
-    Material rust = MatRust(p, n);
+    Material rust = MatRust(p);
 
     float fact = sat(Fbm(vec3(p.xy*2.0, 0), 3) - p.z*0.2 + 0.3);
 
@@ -333,7 +333,7 @@ MatBricks = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, Fbm, Hash3
 @vardeps 
-Material MatBricks(vec3 p, vec3 n) {
+Material MatBricks(vec3 p) {
 
     Material mat;
 
@@ -364,7 +364,7 @@ MatAsphalt = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, Fbm, Voronoi
 @vardeps 
-Material MatAsphalt(vec3 p, vec3 n) {
+Material MatAsphalt(vec3 p) {
 
     Material mat;
     float disp = Fbm(p*4.0,4)*0.05;
@@ -389,7 +389,7 @@ MatGold = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4
 @vardeps 
-Material MatGold(vec3 p, vec3 n) {
+Material MatGold(vec3 p) {
 
     Material mat;
     mat.mrc.xy = vec2(1.0, 0.0);
@@ -404,7 +404,7 @@ MatRustyPaint = register_shader_module("""
 @outputs color
 @dependencies BaseMaterials_v4, MatRotationX, Fbm, VoronoiE, MatRust
 @vardeps 
-Material MatRustyPaint(vec3 p, vec3 n) {
+Material MatRustyPaint(vec3 p) {
 
     Material mat;
     p.z += 5.0;
@@ -432,15 +432,34 @@ Material MatRustyPaint(vec3 p, vec3 n) {
     mat.albedo = vec3(0.074, 0.117, 0.203)*(var*0.3 + 0.5);
     mat.mrc.y = 0.3 + var*0.3;
 
-    return MixMaterial(mat, MatRust(p, n), fact);
+    return MixMaterial(mat, MatRust(p), fact);
 }""")
+
+
+MatPlastic = register_shader_module("""
+@name MatPlastic_v4
+@inputs p
+@outputs color
+@dependencies BaseMaterials_v4
+@vardeps 
+Material MatPlastic(vec3 p) {
+
+    Material mat;
+    mat.albedo = vec3(1);
+    mat.mrc.xy = vec2(0.0, 0.2);
+    return mat;
+}""")
+
+
+
 
 MatCarbonFiber = register_shader_module("""
 @name MatCarbonFiber_v4
 @inputs p
 @outputs color
-@dependencies BaseMaterials
+@dependencies BaseMaterials_v4
 @vardeps 
+// THIS IS NOT SUPPORTED YET AS IT REQUIRES Normal as Input
 Material PlanarCarbonFiber(vec2 p) {
 
     Material mat;
@@ -466,20 +485,3 @@ Material MatCarbonFiber(vec3 p, vec3 n) {
     return result;
 }
 """)
-
-MatPlastic = register_shader_module("""
-@name MatPlastic_v4
-@inputs p
-@outputs color
-@dependencies BaseMaterials_v4
-@vardeps 
-Material MatPlastic(vec3 p, vec3 n) {
-
-    Material mat;
-    mat.albedo = vec3(1);
-    mat.mrc.xy = vec2(0.0, 0.2);
-    return mat;
-}""")
-
-
-

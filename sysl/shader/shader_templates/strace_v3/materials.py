@@ -53,10 +53,10 @@ MatFloor = register_shader_module("""
 @vardeps 
 
 Material MatFloor(vec3 p, vec3 n) {
-
+    p = p * 10.0;
     Material mat;
 
-    float checker = mod(dot(ceil(p*0.2), vec3(1)), 2.0);
+    float checker = mod(dot(ceil(p*0.2 + 0.00001), vec3(1)), 2.0);
 
     vec3 v = Voronoi(p + 2.45 + Fbm(p*1.5, 4)*2.0);
 
@@ -85,7 +85,6 @@ MatCarCoat = register_shader_module("""
 Material MatCarCoat(vec3 p, vec3 n) {
 
     Material mat;
-
     float glitters = Noise(p*25.0);
 
     mat.albedo = mix(vec3(1,0,0), vec3(0.7,0,0), glitters);
@@ -107,7 +106,6 @@ MatAmbers = register_shader_module("""
 Material MatAmbers(vec3 p, vec3 n) {
 
     Material mat;
-
     vec3 v = FbmVoronoi(p*vec3(3,2.0,2.0), 3);
 
     float t = pow(1.0-v.y, 2.0);
@@ -137,8 +135,7 @@ MatWood = register_shader_module("""
 @vardeps 
 Material MatWood(vec3 p, vec3 n) {
 
-    Material mat;
-
+    Material mat; 
     p += Fbm(p*0.9, 3)*1.0;
     p.x += 1.0;
 
@@ -162,7 +159,6 @@ MatBurnedWood = register_shader_module("""
 Material MatBurnedWood(vec3 p, vec3 n) {
 
     Material mat;
-
     p = MatRotateZ(-0.2, p);
 
     float fact = smoothstep(0.5, 0.55, Fbm(p*0.14, 5));
@@ -183,7 +179,6 @@ MatMoss = register_shader_module("""
 Material MatMoss(vec3 p ,vec3 n) {
     
     Material mat;
-
     float t = Noise(p*15.0);
 
     mat.albedo = mix(
@@ -210,7 +205,6 @@ MatSoil = register_shader_module("""
 Material MatSoil(vec3 p, vec3 n) {
 
     Material mat;
-
     vec3 v = FbmVoronoi(p*0.2, 3);
     float stone =  max(1.0 - pow(v.y, 3.0)*3.0, 0.0 );
     stone = max(stone, Fbm(p*0.5, 4));
@@ -236,7 +230,6 @@ MatMarble = register_shader_module("""
 Material MatMarble(vec3 p, vec3 n) {
 
     Material mat;
-
     vec3 v = Voronoi(p*0.7+ Fbm(p*1.5, 4)*2.0);
     float fact = sat(pow(v.x*1.1,5.0));
     float bt = sat(pow(v.z*0.0025, 0.7));
@@ -261,7 +254,6 @@ MatGranite = register_shader_module("""
 Material MatGranite(vec3 p, vec3 n) {
 
     Material mat;
-
     float fact = pow(sat(Fbm(p*7.0, 3)*2.5),4.0);
 
     mat.albedo = mix(
@@ -307,7 +299,6 @@ MatRust = register_shader_module("""
 Material MatRust(vec3 p, vec3 n) {
 
     Material mat;
-
     float var = min(Noise(p*20.0)*0.3 + 0.3 + Fbm(p, 3)*0.5, 1.0);
 
     mat.albedo = vec3(0.129, 0.023, 0.007)*var;
@@ -326,7 +317,6 @@ MatRustedMetal = register_shader_module("""
 Material MatRustedMetal(vec3 p, vec3 n) {
 
     Material mat;
-
     float var = Fbm(p,4);
 
     mat.albedo = vec3(var*0.1 + 0.2);
@@ -349,7 +339,6 @@ MatBricks = register_shader_module("""
 Material MatBricks(vec3 p, vec3 n) {
 
     Material mat;
-
     float var = Fbm(p*2.0, 4)*2.0;
     mat.roughness = var*0.3 + 0.7;
     p += var*0.07;
@@ -405,7 +394,6 @@ MatGold = register_shader_module("""
 Material MatGold(vec3 p, vec3 n) {
 
     Material mat;
-    
     mat.albedo = vec3(1, 0.317, 0.039);
     mat.metallic = 1.0;
     mat.roughness == 0.0;
@@ -460,7 +448,6 @@ MatCarbonFiber = register_shader_module("""
 Material PlanarCarbonFiber(vec2 p) {
 
     Material mat;
-
     float offset = ceil(p.x*10.0)*0.3;
     float stride = fract((p.y*2.0)+offset);
 

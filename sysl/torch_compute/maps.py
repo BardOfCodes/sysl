@@ -56,8 +56,8 @@ COMBINATOR_MAP = {
 MATERIAL_MAP = {
     sls.MaterialV3: mat_func.material_v3,
     sls.MaterialV4: mat_func.material_v4,
-    sls.SMPLMaterial: mat_func.material_v1,
-    sls.SMPLMaterialV4: mat_func.smpl_material_v4,
+    sls.MaterialV1: mat_func.material_v1,
+    sls.MaterialV1V4: mat_func.smpl_material_v4,
     sls.NonEmissiveMaterialV3: mat_func.non_emissive_material_v3,
     sls.SphericalRGBGrid3D: mat_func.spherical_rgb_grid_3d,
 }

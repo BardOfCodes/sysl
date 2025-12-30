@@ -8,6 +8,8 @@ from .shader_templates.multipass.sdf_trace import *
 from .shader_templates.strace_v1_post_trace import *
 from .shader_templates.strace_v2 import *
 from .shader_templates.strace_v3 import *
+from .shader_templates.strace_v5 import *
+from .shader_templates.strace_v6 import *
 from .shader_templates.strace_v3.main_multipass import *
 from .evaluate import DEFAULT_SETTINGS
 

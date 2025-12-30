@@ -1,35 +1,71 @@
 #!/usr/bin/env python3
 """
-Simple HTML generator for ReGL shader projects.
-Reads JSON configuration and generates HTML using Jinja templates.
+HTML generator for SySL shader visualization.
+
+Generates interactive HTML pages using Jinja templates for:
+- Single-pass shader rendering (browser-based via TWGL/ReGL)
+- Multi-buffer shader pipelines
+- Jupyter notebook integration
 """
 
 import json
 import os
+import re
 import html
 from jinja2 import Environment, FileSystemLoader
 from ..shader.utils.ubo import get_variable_info_for_editing
 
-def generate_html(data, template_name='shader_vis.html.j2', output_file=None, mouse_control=True, resolution_via_scale=True, show_controls=False, backend='twgl', layout_horizontal=False, allow_overflow=False, allow_singular_ubo_edit=False, enable_ubo_animation=False):
+# =============================================================================
+# Constants
+# =============================================================================
+
+MAX_FBO_SIZE = 2048  # Safety limit for FBO dimensions
+
+
+# =============================================================================
+# Single-Pass HTML Generation
+# =============================================================================
+
+def generate_html(
+    data,
+    template_name='shader_vis.html.j2',
+    mouse_control=True,
+    resolution_via_scale=True,
+    show_controls=False,
+    backend='twgl',
+    layout_horizontal=False,
+    allow_overflow=False,
+    allow_singular_ubo_edit=False,
+    enable_ubo_animation=False
+):
     """
-    Generate HTML from JSON configuration using Jinja template.
+    Generate HTML from shader data using Jinja template.
     
     Args:
-        json_file (str): Path to JSON configuration file
+        data (dict): Shader configuration containing:
+            - title: Page title
+            - frag_str: Fragment shader code
+            - uniforms: List of uniform definitions
+            - textures: Dict of texture data
+            - ubo_uniforms: UBO uniform data (optional)
+            - ubo_variable_info: UBO variable info for editing (optional)
         template_name (str): Name of the Jinja template file
-        output_file (str): Output HTML file path (optional)
         mouse_control (bool): Enable mouse-controlled camera
         resolution_via_scale (bool): Enable resolution scaling
         show_controls (bool): Show shader control sliders
-        backend (str): Rendering backend to use ('regl' or 'twgl')
+        backend (str): Rendering backend ('regl' or 'twgl')
         layout_horizontal (bool): Use horizontal layout (canvas left, controls right)
         allow_overflow (bool): Allow controls to expand parent div (vs scroll within)
         allow_singular_ubo_edit (bool): Show UBO editing controls for individual variables
+        enable_ubo_animation (bool): Enable UBO animation controls
+        
+    Returns:
+        str: Generated HTML content
     """
-    
     # Validate backend parameter
     if backend not in ['regl', 'twgl']:
         raise ValueError(f"backend must be 'regl' or 'twgl', got '{backend}'")
+    
     texture_data = data.get('textures', {})
     if len(texture_data) > 0:
         load_textures = True
@@ -38,7 +74,6 @@ def generate_html(data, template_name='shader_vis.html.j2', output_file=None, mo
 
     # Get the directory of this script
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    
     
     # Process uniforms based on control flags
     input_uniforms = data.get('uniforms', [])
@@ -121,52 +156,88 @@ def generate_html(data, template_name='shader_vis.html.j2', output_file=None, mo
         enable_ubo_animation=enable_ubo_animation
     )
     
-    
     return html_content
 
 
-
-def create_shader_html(shader_code, sysl_uniforms, sysl_textures, title="Generated Shader",
-    template_name='shader_vis.html.j2', output_file=None, mouse_control=True,
-    resolution_via_scale=True, show_controls=False, backend='twgl',
-    script_dir=None, layout_horizontal=False, allow_overflow=False, allow_singular_ubo_edit=False, enable_ubo_animation=False):
+def create_shader_html(
+    shader_code,
+    sysl_uniforms,
+    sysl_textures,
+    title="Generated Shader",
+    template_name='shader_vis.html.j2',
+    mouse_control=True,
+    resolution_via_scale=True,
+    show_controls=False,
+    backend='twgl',
+    layout_horizontal=False,
+    allow_overflow=False,
+    allow_singular_ubo_edit=False,
+    enable_ubo_animation=False
+):
     """
-    Create complete HTML structure for the shader visualizer.
+    Create complete HTML for shader visualization.
+    
+    This is the main entry point for generating interactive shader viewers.
     
     Args:
-        shader_code (str): The fragment shader code
-        sysl_uniforms (dict): SySL uniforms dictionary
-        title (str): Title for the shader
-        template_name (str): Name of the Jinja template file
-        output_file (str): Output HTML file path (optional)
-        mouse_control (bool): Enable mouse-controlled camera
-        resolution_via_scale (bool): Enable resolution scaling
-        show_controls (bool): Show shader control sliders
-        backend (str): Rendering backend to use ('regl' or 'twgl')
-        script_dir (str): Script directory (optional)
-        layout_horizontal (bool): Use horizontal layout (canvas left, controls right)
-        allow_overflow (bool): Allow controls to expand parent div (vs scroll within)
-        allow_singular_ubo_edit (bool): Show UBO editing controls for individual variables
+        shader_code (str): The fragment shader code (GLSL ES 3.0)
+        sysl_uniforms (dict): SySL uniforms dictionary mapping name to:
+            - type: 'float', 'bool', 'vec2', 'vec3', 'vec4', 'int', 'uniform_buffer'
+            - init_value: Initial value
+            - min/max: Optional bounds for UI sliders
+        sysl_textures (dict): Texture data dictionary mapping name to:
+            - data_b64: Base64-encoded texture data
+            - shape: Texture dimensions
+            - dtype: Data type ('float32' or 'uint8')
+        title (str): Title for the HTML page
+        template_name (str): Jinja template file name
+        mouse_control (bool): Enable mouse-controlled camera rotation/zoom
+        resolution_via_scale (bool): Enable resolution scaling via UI
+        show_controls (bool): Show uniform control sliders
+        backend (str): Rendering backend ('regl' or 'twgl')
+        layout_horizontal (bool): Horizontal layout (canvas left, controls right)
+        allow_overflow (bool): Allow controls to expand parent div
+        allow_singular_ubo_edit (bool): Show UBO editing controls
+        enable_ubo_animation (bool): Enable UBO animation controls
+        
+    Returns:
+        str: Complete HTML document as string
     """
     json_uniforms = create_shader_json(shader_code, sysl_uniforms, sysl_textures, title)
-    return generate_html(json_uniforms, template_name=template_name, output_file=output_file, mouse_control=mouse_control, resolution_via_scale=resolution_via_scale, show_controls=show_controls, backend=backend, layout_horizontal=layout_horizontal, allow_overflow=allow_overflow, allow_singular_ubo_edit=allow_singular_ubo_edit, enable_ubo_animation=enable_ubo_animation)
+    return generate_html(
+        json_uniforms,
+        template_name=template_name,
+        mouse_control=mouse_control,
+        resolution_via_scale=resolution_via_scale,
+        show_controls=show_controls,
+        backend=backend,
+        layout_horizontal=layout_horizontal,
+        allow_overflow=allow_overflow,
+        allow_singular_ubo_edit=allow_singular_ubo_edit,
+        enable_ubo_animation=enable_ubo_animation
+    )
+
 
 def create_shader_json(shader_code, sysl_uniforms, sysl_textures, title="Generated Shader"):
     """
-    Create complete JSON structure for the HTML template system.
+    Create JSON structure for the HTML template system.
     
     Args:
         shader_code (str): The fragment shader code
         sysl_uniforms (dict): SySL uniforms dictionary
+        sysl_textures (dict): Texture data dictionary
         title (str): Title for the shader
         
     Returns:
         dict: Complete JSON structure for template rendering
     """
     json_uniforms = convert_sysl_uniforms_to_json(sysl_uniforms, title)
+    
     # Extract UBO uniforms and prepare variable info for editing
-    ubo_uniforms = {name: data for name, data in sysl_uniforms.items() 
-                    if data.get('type') == 'uniform_buffer'}
+    ubo_uniforms = {
+        name: data for name, data in sysl_uniforms.items() 
+        if data.get('type') == 'uniform_buffer'
+    }
     
     # Get variable info for UBO editing controls
     ubo_variable_info = {}
@@ -183,9 +254,13 @@ def create_shader_json(shader_code, sysl_uniforms, sysl_textures, title="Generat
     }
 
 
+# =============================================================================
+# Uniform Conversion
+# =============================================================================
+
 def convert_sysl_uniforms_to_json(sysl_uniforms, title="Generated Shader"):
     """
-    Convert SySL uniforms format to JSON format compatible with the HTML template system.
+    Convert SySL uniforms format to JSON format for HTML template system.
     
     Args:
         sysl_uniforms (dict): SySL uniforms in format:
@@ -197,7 +272,7 @@ def convert_sysl_uniforms_to_json(sysl_uniforms, title="Generated Shader"):
                     "max": [max_values]
                 }
             }
-        title (str): Title for the generated shader
+        title (str): Title for the generated shader (unused, kept for API compat)
         
     Returns:
         list: List of uniform dictionaries compatible with the template system
@@ -205,11 +280,13 @@ def convert_sysl_uniforms_to_json(sysl_uniforms, title="Generated Shader"):
     json_uniforms = []
     render_uniforms = ["sunAzimuth", "sunElevation", "resolution", "castShadows"]
     camera_uniforms = ["cameraAngleX", "cameraAngleY", "cameraDistance", "cameraOrigin"]
+    
     for uniform_name, uniform_data in sysl_uniforms.items():
         uniform_type = uniform_data.get('type', 'float')
         init_value = uniform_data.get('init_value', 0)
         min_vals = uniform_data.get('min', [])
         max_vals = uniform_data.get('max', [])
+        
         if uniform_name in render_uniforms:
             set_name = "Settings"
         elif uniform_name in camera_uniforms:
@@ -219,12 +296,10 @@ def convert_sysl_uniforms_to_json(sysl_uniforms, title="Generated Shader"):
         
         # Handle UBO uniforms specially - don't create UI controls for them
         if uniform_type == 'uniform_buffer':
-            # UBO uniforms are passed through to the underlying_uniforms but don't get UI controls
             continue
         
         # Handle different uniform types
         if uniform_type == 'bool':
-            # Boolean uniform
             json_uniforms.append({
                 "type": "bool",
                 "name": uniform_name,
@@ -234,11 +309,9 @@ def convert_sysl_uniforms_to_json(sysl_uniforms, title="Generated Shader"):
             })
             
         elif uniform_type == 'float':
-            # Float uniform -> range slider UI
             min_val = min_vals[0] if min_vals else 0.0
             max_val = max_vals[0] if max_vals else 1.0
             step_size = (max_val - min_val) / 1000
-            # step = 0.01
             
             json_uniforms.append({
                 "type": "float",
@@ -252,7 +325,6 @@ def convert_sysl_uniforms_to_json(sysl_uniforms, title="Generated Shader"):
             })
             
         elif uniform_type == 'int':
-            # Integer uniform -> range slider UI with step 1
             min_val = min_vals[0] if min_vals else 0
             max_val = max_vals[0] if max_vals else 100
             
@@ -268,10 +340,8 @@ def convert_sysl_uniforms_to_json(sysl_uniforms, title="Generated Shader"):
             })
             
         elif uniform_type in ['vec2', 'vec3', 'vec4']:
-            # Vector types -> single entry with list min/max values
             vector_size = len(init_value) if hasattr(init_value, '__len__') else int(uniform_type[-1])
             
-            # Build min/max lists, padding with defaults if needed
             min_list = []
             max_list = []
             for i in range(vector_size):
@@ -294,10 +364,9 @@ def convert_sysl_uniforms_to_json(sysl_uniforms, title="Generated Shader"):
     
     return json_uniforms
 
+
 def _format_label(uniform_name):
-    """Convert camelCase or snake_case to readable label"""
-    # Convert camelCase to words
-    import re
+    """Convert camelCase or snake_case to readable label."""
     # Insert spaces before uppercase letters
     name = re.sub('([a-z0-9])([A-Z])', r'\1 \2', uniform_name)
     # Replace underscores with spaces
@@ -305,12 +374,27 @@ def _format_label(uniform_name):
     # Capitalize first letter of each word
     return name.title()
 
-def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader",
-    template_name='multibuffer_shader_v2.html.j2', output_file=None,
-    mouse_control=True, resolution_via_scale=True, show_controls=True, 
-    backend='twgl', layout_horizontal=False, allow_overflow=False,
-    allow_singular_ubo_edit=False, enable_ubo_animation=False, show_primitive_tracking=False,
-    primitive_editing_mode=False, auxiliary=None):
+
+# =============================================================================
+# Multi-Buffer HTML Generation
+# =============================================================================
+
+def create_multibuffer_shader_html(
+    shader_definitions,
+    title="Multi-Pass Shader",
+    template_name='multibuffer_shader_v2.html.j2',
+    mouse_control=True,
+    resolution_via_scale=True,
+    show_controls=True,
+    backend='twgl',
+    layout_horizontal=False,
+    allow_overflow=False,
+    allow_singular_ubo_edit=False,
+    enable_ubo_animation=False,
+    show_primitive_tracking=False,
+    primitive_editing_mode=False,
+    auxiliary=None
+):
     """
     Create HTML for multi-buffer shader rendering.
     
@@ -319,39 +403,34 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
             - shader_code: Fragment shader code
             - uniforms: Pass-specific uniforms dictionary
             - textures: Pass-specific textures dictionary
-            - input_FBOs: List of dicts with FBO specs: {'name': str, 'width': int, 'height': int, 'type': 'float'/'vec2'/'vec3'/'vec4'}
-            - output_FBO: Dict with FBO spec: {'name': str, 'width': int, 'height': int, 'type': 'float'/'vec2'/'vec3'/'vec4'}
-                         OR string 'image' for final canvas output
+            - input_FBOs: List of FBO specs {'name', 'width', 'height', 'type'}
+            - output_FBO: FBO spec dict or 'image' for final output
         title (str): Title for the shader
         template_name (str): Name of the Jinja template file
-        output_file (str): Output HTML file path (optional)
         mouse_control (bool): Enable mouse-controlled camera
-        resolution_via_scale (bool): Enable resolution scaling (scales all FBOs and canvas)
+        resolution_via_scale (bool): Enable resolution scaling
         show_controls (bool): Show shader control sliders
-        backend (str): Rendering backend (only 'twgl' supported for multi-buffer)
-        layout_horizontal (bool): Use horizontal layout (canvas left, controls right)
-        allow_overflow (bool): Allow controls to expand parent div (vs scroll within)
-        allow_singular_ubo_edit (bool): Show UBO editing controls for individual variables
-        enable_ubo_animation (bool): Enable UBO animation controls
-        show_primitive_tracking (bool): Show primitive tracking UI controls (tracking is always enabled)
-        primitive_editing_mode (bool): Enable primitive editing with uniform manipulation
+        backend (str): Rendering backend (only 'twgl' supported)
+        layout_horizontal (bool): Horizontal layout
+        allow_overflow (bool): Allow controls overflow
+        allow_singular_ubo_edit (bool): Show UBO editing controls
+        enable_ubo_animation (bool): Enable UBO animation
+        show_primitive_tracking (bool): Show primitive tracking UI
+        primitive_editing_mode (bool): Enable primitive editing
         auxiliary (dict): Auxiliary data for primitive editing:
-            - var_map: Dict mapping variable names to values
-            - primitive_map: Dict mapping primitive IDs to list of variable names
-            - uniforms: Dict of editing uniforms (translate, axis_angle, etc.)
-            - uniform_map: Dict mapping list index to uniform name (e.g., {0: 'size', 1: 'round_dilate_taper_bend'})
+            - var_map: Variable name to value mapping
+            - primitive_map: Primitive ID to variable names mapping
+            - uniforms: Editing uniforms
+            - uniform_map: Index to uniform name mapping
         
-    FBO Sizing:
-        - Each FBO uses the width/height specified in its FBO spec
-        - The canvas is automatically sized to match the final output FBO (the pass outputting to 'image')
-        - If output_FBO is 'image' without size info, the canvas size is inferred from input FBOs or defaults to 512x512
-        - resolution_via_scale applies a scale factor to both FBO sizes and canvas size
+    Returns:
+        str: Complete HTML document as string
         
     FBO type mapping:
-        - 'float': R32F (1 channel, 32-bit float)
-        - 'vec2': RG32F (2 channels, 32-bit float)
-        - 'vec3': RGB32F (3 channels, 32-bit float)
-        - 'vec4': RGBA32F (4 channels, 32-bit float)
+        - 'float': R32F (1 channel)
+        - 'vec2': RG32F (2 channels)
+        - 'vec3': RGB32F (3 channels)
+        - 'vec4': RGBA32F (4 channels)
     """
     if backend != 'twgl':
         raise ValueError("Multi-buffer mode only supports 'twgl' backend")
@@ -367,43 +446,44 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
             if isinstance(input_fbo, dict):
                 fbo_name = input_fbo['name']
                 input_names.append(fbo_name)
-                # Store FBO spec if not already defined
                 if fbo_name not in fbo_specs:
                     fbo_specs[fbo_name] = input_fbo
             else:
                 # Backwards compatibility: string name defaults to vec4
                 input_names.append(input_fbo)
                 if input_fbo not in fbo_specs:
-                    fbo_specs[input_fbo] = {'name': input_fbo, 'width': 512, 'height': 512, 'type': 'vec4'}
+                    fbo_specs[input_fbo] = {
+                        'name': input_fbo, 
+                        'width': 512, 
+                        'height': 512, 
+                        'type': 'vec4'
+                    }
         
         # Process output FBO
         output_fbo = shader_def['output_FBO']
         if isinstance(output_fbo, dict):
             output_name = output_fbo['name']
-            # Always add output FBOs to specs, including 'image'
             if output_name not in fbo_specs:
                 fbo_specs[output_name] = output_fbo
         elif output_fbo == 'image':
             output_name = 'image'
-            # Don't add 'image' here if it's just a string - it will be handled at the end
         else:
-            # Backwards compatibility: string name defaults to vec4
             output_name = output_fbo
             if output_fbo not in fbo_specs:
-                fbo_specs[output_fbo] = {'name': output_fbo, 'width': 512, 'height': 512, 'type': 'vec4'}
+                fbo_specs[output_fbo] = {
+                    'name': output_fbo, 
+                    'width': 512, 
+                    'height': 512, 
+                    'type': 'vec4'
+                }
         
-        # Get uniforms from shader definition
         shader_uniforms = shader_def.get('uniforms', {})
-        
-        # Use shader uniforms as-is (no automatic additions)
-        # The multi-buffer system will handle time, frame, and resolution separately
-        merged_uniforms = shader_uniforms
         
         pass_data = {
             'index': i,
             'shader_code': shader_def['shader_code'],
-            'uniforms': convert_sysl_uniforms_to_json(merged_uniforms),
-            'raw_uniforms': merged_uniforms,  # Keep raw uniforms for template
+            'uniforms': convert_sysl_uniforms_to_json(shader_uniforms),
+            'raw_uniforms': shader_uniforms,
             'textures': shader_def.get('textures', {}),
             'input_FBOs': input_names,
             'output_FBO': output_name
@@ -416,35 +496,31 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
         if pass_data['output_FBO'] in pass_data['input_FBOs']:
             self_referencing_fbos.append(pass_data['output_FBO'])
     
-    # Find the final output FBO size (the pass that outputs to 'image')
-    MAX_SIZE = 2048  # Safety limit
-    
-    # Find last pass that outputs to 'image'
-    image_pass_idx = next((i for i in range(len(passes) - 1, -1, -1) if passes[i]['output_FBO'] == 'image'), -1)
+    # Find the final output FBO size
+    image_pass_idx = next(
+        (i for i in range(len(passes) - 1, -1, -1) if passes[i]['output_FBO'] == 'image'), 
+        -1
+    )
     shader_def = shader_definitions[image_pass_idx]
     
     if isinstance(shader_def.get('output_FBO'), dict):
-        # output_FBO is a dict with size info
         final_output_size = {
-            'width': min(int(shader_def['output_FBO']['width']), MAX_SIZE),
-            'height': min(int(shader_def['output_FBO']['height']), MAX_SIZE)
+            'width': min(int(shader_def['output_FBO']['width']), MAX_FBO_SIZE),
+            'height': min(int(shader_def['output_FBO']['height']), MAX_FBO_SIZE)
         }
-        # Add 'image' to fbo_specs so it gets an FBO created
         fbo_specs['image'] = shader_def['output_FBO']
     else:
-        # output_FBO is string 'image', use first input FBO size
         first_input = shader_def['input_FBOs'][0]
         if isinstance(first_input, dict):
             final_output_size = {
-                'width': min(int(first_input['width']), MAX_SIZE),
-                'height': min(int(first_input['height']), MAX_SIZE)
+                'width': min(int(first_input['width']), MAX_FBO_SIZE),
+                'height': min(int(first_input['height']), MAX_FBO_SIZE)
             }
         else:
             final_output_size = {
-                'width': min(int(fbo_specs[first_input]['width']), MAX_SIZE),
-                'height': min(int(fbo_specs[first_input]['height']), MAX_SIZE)
+                'width': min(int(fbo_specs[first_input]['width']), MAX_FBO_SIZE),
+                'height': min(int(fbo_specs[first_input]['height']), MAX_FBO_SIZE)
             }
-        # Add 'image' to fbo_specs with inferred size
         fbo_specs['image'] = {
             'name': 'image',
             'width': final_output_size['width'],
@@ -460,7 +536,6 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
             if tex_name not in all_textures:
                 all_textures[tex_name] = tex_data
     
-    # Check if we have any textures to load
     has_textures = len(all_textures) > 0
     
     # Setup Jinja environment
@@ -478,29 +553,24 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
                 all_uniforms_raw.append(uniform)
                 uniform_names_seen.add(uniform['name'])
     
-    # Process uniforms for UI controls (same logic as single-pass version)
+    # Process uniforms for UI controls
     ctrl_uniforms = []
-    
     for uniform in all_uniforms_raw:
         uniform_name = uniform.get('name')
         
-        # Exclude time and frame - these are managed by the rendering system
         if uniform_name in ['time', 'frame']:
             continue
-        # Exclude camera controls from UI if mouse control is enabled
         elif mouse_control and uniform_name in ['cameraAngleX', 'cameraAngleY', 'cameraDistance', 'cameraOrigin']:
             continue
-        # Exclude resolution control from UI if resolution_via_scale is enabled
         elif resolution_via_scale and uniform_name == 'resolution':
             continue
         else:
-            # Include in UI controls
             ctrl_uniforms.append(uniform)
     
-    # Prepare underlying_uniforms (all uniforms for shader initialization)
+    # Prepare underlying_uniforms
     underlying_uniforms = all_uniforms_raw.copy()
     
-    # Add time as a hidden uniform (not in UI controls)
+    # Add time as a hidden uniform
     time_uniform = {
         "type": "float",
         "name": "time",
@@ -533,9 +603,9 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
         passes=passes,
         fbo_specs=fbo_specs,
         self_referencing_fbos=self_referencing_fbos,
-        final_output_size=final_output_size,  # Canvas will be sized to match this
-        uniforms=ctrl_uniforms,  # For controls.html.j2 (UI controls only)
-        underlying_uniforms=underlying_uniforms,  # For common_script.js.html.j2 to initialize uniformValues
+        final_output_size=final_output_size,
+        uniforms=ctrl_uniforms,
+        underlying_uniforms=underlying_uniforms,
         resolution_via_scale=resolution_via_scale,
         show_controls=show_controls,
         backend=backend,
@@ -549,21 +619,27 @@ def create_multibuffer_shader_html(shader_definitions, title="Multi-Pass Shader"
         auxiliary=auxiliary or {},
         ubo_uniforms=all_ubo_uniforms,
         ubo_variable_info=all_ubo_variable_info,
-        frag_str="",  # Multi-buffer doesn't have a single shader
-        load_textures=has_textures,  # Load textures if any passes use them
-        textures=all_textures  # Merged textures from all passes
+        frag_str="",
+        load_textures=has_textures,
+        textures=all_textures
     )
-    
-    # Write to file if specified
-    if output_file:
-        with open(output_file, 'w') as f:
-            f.write(html_content)
     
     return html_content
 
+
+# =============================================================================
+# Jupyter Integration
+# =============================================================================
+
 def make_jupyter_compatible_html(html_code):
     """
-    Make the HTML code compatible with Jupyter notebooks.
+    Wrap HTML code in an iframe for Jupyter notebook display.
+    
+    Args:
+        html_code (str): Complete HTML document
+        
+    Returns:
+        str: HTML iframe element for use with IPython.display.HTML()
     """
     escaped_html = html.escape(html_code)
     iframe_html = f"""<iframe
