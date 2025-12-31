@@ -199,7 +199,7 @@ MatSoil = register_shader_module("""
 @name MatSoil_v4
 @inputs p
 @outputs color
-@dependencies BaseMaterials_v4, FbmVoronoi, MatMoss, Voronoi
+@dependencies BaseMaterials_v4, FbmVoronoi, MatMoss_v4, Voronoi
 @vardeps 
 Material MatSoil(vec3 p) {
 
@@ -309,7 +309,7 @@ MatRustedMetal = register_shader_module("""
 @name MatRustedMetal_v4
 @inputs p
 @outputs color
-@dependencies BaseMaterials_v4, Fbm, MatRust
+@dependencies BaseMaterials_v4, Fbm, MatRust_v4
 @vardeps 
 Material MatRustedMetal(vec3 p) {
 
@@ -402,7 +402,7 @@ MatRustyPaint = register_shader_module("""
 @name MatRustyPaint_v4
 @inputs p
 @outputs color
-@dependencies BaseMaterials_v4, MatRotationX, Fbm, VoronoiE, MatRust
+@dependencies BaseMaterials_v4, MatRotationX, Fbm, VoronoiE, MatRust_v4
 @vardeps 
 Material MatRustyPaint(vec3 p) {
 

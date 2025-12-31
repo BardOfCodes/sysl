@@ -30,7 +30,8 @@ DEFAULT_SETTINGS = {
 def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr, 
                          mode: str = "singlepass",
                          settings: Dict[str, Any] | None = None, 
-                         insert_types: bool=True) -> List[Dict[str, Any]] | str:
+                         insert_types: bool=True,
+                         *args, **kwargs) -> List[Dict[str, Any]] | str:
 
     if settings is None:
         settings = DEFAULT_SETTINGS
@@ -39,9 +40,9 @@ def evaluate_to_shader(expression: gls.GLFunction | gls.GLExpr,
         expression = convert_solid_types(expression, render_mode)
     
     if mode == "singlepass":
-        shader_output = evaluate_singlepass(expression, settings, insert_types=insert_types)
+        shader_output = evaluate_singlepass(expression, settings, *args, **kwargs)
     elif mode == "multipass":
-        shader_output = evaluate_multipass(expression, settings, insert_types=insert_types)
+        shader_output = evaluate_multipass(expression, settings, *args, **kwargs)
     else:
         raise ValueError(f"Invalid mode: {mode}")
 

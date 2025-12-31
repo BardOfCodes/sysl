@@ -1,19 +1,37 @@
-# Core dependencies for SySL
+# SySL Core Dependencies
+# ======================
+
 numpy>=1.21.0
 sympy>=1.9.0
 jinja2>=3.0.0
 Pillow>=8.3.0
 
-# For Jupyter notebook support
-IPython>=7.0.0
-jupyter>=1.0.0
+# External Dependency (required)
+# ------------------------------
+# GeoLiPI provides the symbolic geometric expression system.
+# Install from: https://github.com/bardofcodes/geolipi
+# pip install geolipi  # or install from source
 
-# Development dependencies (optional)
-# Uncomment these if you need development tools
+# Optional: Jupyter Notebook Support
+# ----------------------------------
+# Uncomment to enable inline visualization in Jupyter notebooks
+# IPython>=7.0.0
+# jupyter>=1.0.0
+
+# Optional: Offline Rendering (ModernGL)
+# --------------------------------------
+# Uncomment to enable headless GPU rendering without a browser
+# moderngl>=5.6.0
+# PyOpenGL>=3.1.0
+
+# Optional: PyTorch Compute
+# -------------------------
+# Uncomment to enable torch_compute module for differentiable evaluation
+# torch>=1.9.0
+
+# Development Dependencies
+# ------------------------
+# Uncomment for development/testing
 # pytest>=6.0.0
 # black>=21.0.0
 # flake8>=3.9.0
-
-# Note: geolipi appears to be a local dependency in your project
-# If geolipi is a separate package that needs to be installed,
-# you may need to add it here or install it separately 

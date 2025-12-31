@@ -1,153 +1,75 @@
 # SySL: Symbolic Scene Language
-# Version support documentation: 
-
-1. Basic Inigo. Simplest Fastest but not strong color control
-2. Basic Inigo + Color Support
-3. Basic Matthieu: Different Lighting etc + Material Functions (p, n).
-4. Basic Matthieu + Local Material Functions (n)+ Material Mixing + Simpler Material Desc + Material Textures. 
-
-# Multipass Basic:
-
-1. Split traversal one for just Distance and ID. 
-2. Second for Material based coloring. 
-3. Add tirtiary pass for outlines / rm bg etc. (shape Outline, selection outline, )
-4. Fourth pass for AA. 
-
-
-## December 1:
-
-1. Support Extrude, and check all the 2D and 3D shapes.
-2. Support Macros
-3. Check all the compositional operators and Transforms.
-4. Make all existing shader code versions work in single pass and multipass mode. 
-5. Add the remaining Shaders.
-6. Create a good Readme file.
-7. Update Geolipi to link to this and show results from here too.
-
-# Next would be ASMBLR, ASMBLR_Front, ASMBLR_Back. 
-# Next Migumi and ResFit Opt. 
-# 
-
-Release goals: 
-
-1. This repo should support: 
-    1. Geometric expression -> interactive visualizer (twgl)
-    2. Geometric Expression -> interactive editor (twgl)
-    3. Geometric Expression -> modernGL based offline render. 
-
-2. The kinds of renderers: 
-    1. V1 is Inigo's Simple Renderer. 
-    2. V2 is Inigo Simple + color. 
-    3. V3 is Matthieu Jaquemet https://www.shadertoy.com/view/3tKfDG
-    4. V4 is Adapted Matthieu. 
-    5. V5 is Toon Shader
-    6. V6 is PBR
-    7. V7 is Poisson.
-
-3. Must support the full support of 2D and 3D geom expressions. Basic Extrusion Primitive, and Basic Revolution Primitive. 
-
-3. Geometry -> A lot of symbolic expressions for things - GeoLIPI + MXG + eventually SW 2D patterns for materials. 
-
-# Applications to show:
-
-1. Render your implicits (prim Assemblies) without going to meshes for paper ready quality renders. 
-2. Create Edit 3D scenes for the web simply.
-3. Record optimization and replay. 
-4. Render target Voxels with grid lines cleanly. 
-5. Check SDF field more easily by slicing the expression online with planes. 
-
-
-# Generate the renders. 
-
-
-## Oct 18: 
-What should SYSL contain?
-
-GeoLIPI is about all things just plain geometry based. 
-    Contains the symbolic defs and the python implementation. 
-
-SySL 
-* Contains the code to map these expressions to Shader code templates -> Making it feasible to create "Scene Expressions"
-* Introduces Material Expressions that can be used to specify materials for different parts. 
-    Scene 
-
-* Contains code wrappers to render the scene expressions
-
-
-# Applications: 
-
-
-## TODO
-
-1. OBB SDF and RGBMR. 
-2. OBB 2D Texture Lookup. 
-3. Custom SDF function, material function.
-4. New shader to have two passes. 
-2. New Shader - material based on local position.
-3. Split Shader -> Find point + index, and only run the material function in the end. 
-4. 
-
-## TODO Oct 15
-
-1. Add the SDF Viewer with AABB and OBB
-
-2. Add Custom SDF function. 
-
-3. Add time uniform variable. 
-2. Add a few more important Shader Viewer (edge, transparent Material)
-    3. Good Shading with proper light transport (Denoise later)
-    4. NPR rendering. 
-    5. BG viewer? 
-
-3. Create Some compelling Examples. 
-
-4. Add Readme with Gifs. 
-
-5. Make the
-
-
-
-## TODO:
-
-
-
-1. Impove the local shader context manager - Currently its all over the place. 
-
-2. Provide the Uint8 encoding option for field. 
-
-3. Stracer4 with local coordinate frame strcuts. 
-
-4. Stracer5 with transparency / translucency. 
-
-6. Add a Tool shading / edges only version.
-
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-A Python library for constructing Implicit Scenes with Symbolic Expressions, featuring [TBD] ray-traced rendering and real-time visualization capabilities. 
+**SySL** extends [GeoLiPI](https://github.com/bardofcodes/geolipi) by adding material-related symbols to geometric expressions. It provides an shader evaluation pipeline that converts symbolic scene expressions into GLSL shader code, enabling sphere-traced rendering and real-time interactive WebGL visualization.
 
-1. Use [Geolipi]() to describe the 3D Shape. 
-2. Use **SySL** to add materials to 3D shapes / general Shader for visuals.
-3. Use **SySL** to generate shader code and visualize the output.
+<!-- TODO: Add hero image/GIF showing example renders -->
+<p align="center">
+  <img src="assets/hero.jpg" alt="SySL Rendering Examples">
+</p>
+
+## Applications
+
+### 1. Paper-Ready Renders
+Generate high-quality renders of primitive assemblies without mesh conversion. I used this system for rendering primitive assemblies for paper figures in a recent work [Residual Primitive Fitting of 3D Shapes with SuperFrusta](https://arxiv.org/abs/2512.09201). 
+
+<!-- TODO: Add render comparison image -->
+<p align="center">
+  <img src="assets/paper_fig.jpg" alt="Primitive Assembly Render">
+</p>
+
+### 2. Interactive Web Visualization
+Create standalone HTML files for interactive 3D visualization. Useful for debugging, or stand alone apps. 
+
+<!-- TODO: Add interactive demo GIF -->
+<p align="center">
+  <img src="assets/interaction.gif" alt="Interactive Demo" width="400">
+</p>
+
+### 3. Interactive Assembly editor. 
+
+Create an standalone app for editing *textured* (deployable) primitive assemblies. 
+
+<p align="center">
+  <img src="assets/editing.gif" alt="Editing Demo" width="400">
+</p>
+
+### 4. Animation Sequences
+Generate frame-by-frame renders for animations.
+
+<!-- TODO: Add animation example -->
+<p align="center">
+  <img src="assets/animation.gif" alt="Editing Demo" width="400">
+</p>
 
 ## Features
 
-- **Symbolic Expression System**: Define complex 3D scenes using mathematical expressions
-- **SDF (Signed Distance Fields) Support**: Built-in support for various primitive shapes and operations
-- **Material-Aware Operations**: Advanced material handling with physically-based rendering
-- **Real-time Visualization**: Interactive preview of implicit scenes
-- **TBD - High-Quality Rendering**: Ray-traced output for production-quality results
-- **TBD - Headless Offline Rendiner**: Using Modern GL.
-- **Jupyter Notebook Integration**: Interactive development and visualization
-
+- **Material Expressions**: Define materials with albedo, metallic, roughness, emissive properties
+- **Multiple Render Modes**: From simple Inigo-style to PBR-quality Matthieu-style rendering
+- **Shader Code Generation**: Convert symbolic expressions to optimized GLSL
+- **Interactive Visualization**: Generate standalone HTML files with WebGL rendering
+- **Jupyter Integration**: Inline visualization in notebooks
+- **Offline Rendering**: Headless rendering via ModernGL (optional)
+- **Image Effects (IMFX)**: Post-processing effects like outlines, dithering, anti-aliasing
 ## Installation
+
+### Prerequisites
+- Python 3.8+
+- [GeoLiPI](https://github.com/bardofcodes/geolipi) (geometric expression library)
 
 ### From Source
 
 ```bash
+# Clone the repository
 git clone https://github.com/bardofcodes/sysl.git
 cd sysl
+
+# Install geolipi first (if not already installed)
+# pip install geolipi  # or install from source
+
+# Install SySL
 pip install -e .
 ```
 
@@ -159,105 +81,159 @@ pip install -r requirements.txt
 
 ## Quick Start
 
+### Basic Example
+
 ```python
+# TODO: Fill in working example
 import geolipi.symbolic as gls
 import sysl.symbolic as sls
-from sysl.shader.evaluate import evaluate_to_shader
-from sysl.shader_runtime.generate_shader_html import create_shader_html, make_jupyter_compatible_html
-from IPython.display import display, HTML
+from sysl.shader import evaluate_to_shader
+from sysl.shader_runtime import create_shader_html
 
-# Create basic shapes
-sphere = gls.Sphere3D((1.0,))
-box = gls.Cuboid3D((2, 0.1, 2,))
+# Create geometry
+geometry = gls.DeathStar3D((0.5,), (0.35,), (0.5,))
 
-# Combine with operations
-scene = gls.Translate3D(
-    gls.Union(sphere, box),
-    (0.5, 0.5, 0)
-)
+# Add materials  
+material = sls.MatRefV4("MatLava")
+scene_with_material = sls.MatSolid(geometry, material)
 
-# Assign materials
-material = sls.NonEmissiveMaterialV3(
-    (1.0, 0.0, 0.0), 
-    (1.0,), (1.0,), (0.3,)
-)
+# Generate shader
+shader_info = evaluate_to_shader(scene_with_material)
 
-scene_with_material = sls.MatSolidV3(scene, material)
+# Generate HTML
+html_code = create_shader_html(shader_info, show_controls=True)
 
-# Render
-shader_code, uniforms = evaluate_to_shader(scene_with_material)
-
-# TO visualize in a browser:
-html_code = create_shader_html(shader_code, uniforms, show_controls=True)
-with open("test.html", "w") as f:
+# Save to a file: 
+with open("<path-to-webserver>/test.html", "w") as f:
     f.write(html_code)
+# Now lauch a python server at that location and open test.html.
+# for instance:
+# cd <path-to-webserver>
+# python -m http.server
+#  -> open localhost:8000/test.html in a web browser.
 
-# To visualize inline in jupyter notebook:
+#  If in Jupyter Notebook 
+from IPython.display import display, HTML
+from sysl.shader_runtime.generate_shader_html import make_jupyter_compatible_html
 jupy_wrapper_html = make_jupyter_compatible_html(html_code)
 display(HTML(jupy_wrapper_html))
 ```
+
+### Jupyter Notebook
+
+See `notebooks/` for examples.
+
+## Render Modes
+
+SySL supports multiple rendering pipelines, each with different visual characteristics:
+
+| Mode | Description | Use Case | Source|
+|------|-------------|----------|----------|
+| **V1** | Simple Inigo-style | Fast preview, basic shading |[ShaderToy](https://www.shadertoy.com/view/Xds3zN)|
+| **V2** | Inigo + Color | Simple colored renders | [ShaderToy](https://www.shadertoy.com/view/Xds3zN)|
+| **V3** | J. Matthieu-style | Material functions with (p, n) |[ShaderToy](https://www.shadertoy.com/view/3tKfDG)|
+| **V4** | Adapted Matthieu | Local materials + mixing (default) |[ShaderToy](https://www.shadertoy.com/view/3tKfDG)|
+| **V5** | Toon Shader | NPR stylized rendering |[ShaderToy](https://www.shadertoy.com/view/ll33Wn)|
+| **V6** | Dithered Shader | V2 + Dithering + outline |[ShaderToy](https://www.shadertoy.com/view/33BXW3)|
+
+### Selecting a Render Mode
+
+
+```python
+settings = {
+    "render_mode": "v4",  # Options: v1, v2, v3, v4, v5, v6
+    "variables": {
+        "castShadows": True,
+        "_AA": 2,  # Anti-aliasing factor
+    }
+}
+
+shader_code, uniforms, textures = evaluate_to_shader(expression, settings=settings)
+```
+
+## Image Effects (IMFX)
+
+Post-processing effects available in multi-pass rendering:
+
+- **Outlines**: Edge detection for shape boundaries
+- **Selection Highlight**: Highlight specific primitives (used in editing mode)
+- **Dithering**: Stylized dither patterns
+- **FXAA**: Fast approximate anti-aliasing
 
 ## Project Structure
 
 ```
 sysl/
 ├── sysl/
-│   ├── symbolic/          # Symbolic expression system
-│   ├── shader/           # Rendering and shader utilities
-│   └── shader_vis/       # Visualization components
-├── scripts/
-│   └── basic.py          # Basic usage scripts
-├── notebooks/
-│   └── test.ipynb        # Example notebooks
-└── README.md
+│   ├── symbolic/        # Material symbols and MatSolid definitions
+│   ├── shader/          # Expression → GLSL shader conversion
+│   │   ├── shader_templates/  # GLSL template modules
+│   │   └── utils/       # UBO packing, texture encoding
+│   ├── shader_runtime/  # HTML generation, offline rendering
+│   └── torch_compute/   # PyTorch-based evaluation (optional)
+├── scripts/             # Example scripts
+├── notebooks/           # Jupyter notebook examples
+└── assets/              # Images for documentation
 ```
 
-## Documentation
+## Acknowledgments
 
-### Core Concepts
+This project builds heavily on the excellent work from the ShaderToy community:
 
-1. **Signed Distance Fields (SDFs)**: Mathematical representations of 3D shapes expressions from geolipi.
-2. **Symbolic Expressions**: Store shapes as expressions in python, merge and reuse them like variables.
-3. **Material-Aware Operations**: Advanced material blending and assignment.
-4. **TODO: Ray-Traced Rendering**: High-quality output with realistic lighting
+- **Inigo Quilez** ([iquilezles.org](https://iquilezles.org/)) - SDF primitives, combinators, and basic sphere tracing / rendering techniques
+- **Matthieu Jacquemet** ([ShaderToy](https://www.shadertoy.com/view/3tKfDG)) - A material system + alternate rendering system.
 
-### Examples
+> **Important License Note**: The MIT license applies to the Python code in this repository. The GLSL shader templates are derived from ShaderToy contributions and retain their original authors' licensing terms. Please respect the original authors' licenses when using generated shader code.
 
-Check out the `notebooks/` directory for interactive examples:
-- `test.ipynb`: Basic usage and visualization examples
+## Citation
 
-### API Reference
+If you use SySL in your research, please cite:
 
-[Coming Soon] - Detailed API documentation
+```bibtex
+@misc{ganeshan2025superfit,
+  title={Residual Primitive Fitting of 3D Shapes with SuperFrusta}, 
+  author={Aditya Ganeshan and Matheus Gadelha and Thibault Groueix and Zhiqin Chen and Siddhartha Chaudhuri and Vladimir Kim and Wang Yifan and Daniel Ritchie},
+  year={2025},
+  eprint={2512.09201},
+  archivePrefix={arXiv},
+  primaryClass={cs.GR},
+  url={https://arxiv.org/abs/2512.09201}, 
+}
 
-## Goals
+@article{ganeshan2025migumi,
+  author = {Ganeshan, Aditya and Fleischer, Kurt and Jakob, Wenzel and Shamir, Ariel and Ritchie, Daniel and Igarashi, Takeo and Larsson, Maria},
+  title = {MiGumi: Making Tightly Coupled Integral Joints Millable},
+  year = {2025},
+  publisher = {Association for Computing Machinery},
+  volume = {44},
+  number = {6},
+  url = {https://doi.org/10.1145/3763304},
+  doi = {10.1145/3763304},
+  journal = {ACM Trans. Graph.},
+  articleno = {193},
+}
+```
 
-1. **Quick Visualization**: Rapidly prototype and visualize complex 3D scenes
-2. **High-Quality Rendering**: Generate production-ready ray-traced images
-3. **Flexible Material System**: Support for physically-based materials and custom shaders
-4. **Performance**: Efficient evaluation of complex implicit functions
+## Known Limitations & Future Work
+
+- **Code Duplication**: Shader templates have some duplication that could be refactored
+- **Complex Scenes**: Very complex scenes may benefit from cone tracing (not yet implemented)
+- **WebGPU**: Currently WebGL only; WGPU support planned
+- **Configuration Persistence**: Saving/loading editor configurations not yet supported
+
+See `sysl/shader/shader_templates/future_shaders.md` for planned shader additions.
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgments
+**Note**: Shader templates derived from ShaderToy retain their original licensing.
 
-- A lot of the code here is derived from Inigo Quilez's work. 
-- The real-material shader is derived from Jacquemet Matthieu's code.
-
-## Roadmap
-
-- [ ] Export to standard 3D formats
-- [ ] ASMBLR-integration -> Interactive web-based editor
-- [ ] Torch-compute head -> Differentiable Rendering pipeline. 
-
-## Support
+## Contact
 
 - **Issues**: [GitHub Issues](https://github.com/bardofcodes/sysl/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/bardofcodes/sysl/discussions)
-- **Email**: [your.email@example.com](mailto:adityaganeshan@gmail.com)
+- **Email**: [adityaganeshan@gmail.com](mailto:adityaganeshan@gmail.com)
 
 ---
 
-**Note**: This project is under active development. APIs may change between versions.
+*This project is under active development. APIs may change between versions.*

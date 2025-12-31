@@ -1,0 +1,111 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sysl"
+version = "0.1.0"
+description = "Symbolic Scene Language - Convert geometric expressions to shader code for sphere-traced rendering"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Aditya Ganeshan", email = "adityaganeshan@gmail.com"}
+]
+maintainers = [
+    {name = "Aditya Ganeshan", email = "adityaganeshan@gmail.com"}
+]
+keywords = [
+    "graphics",
+    "rendering",
+    "shader",
+    "sdf",
+    "signed-distance-field",
+    "symbolic",
+    "visualization",
+    "webgl",
+    "sphere-tracing"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Multimedia :: Graphics :: 3D Rendering",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.21.0",
+    "sympy>=1.9.0",
+    "jinja2>=3.0.0",
+    "Pillow>=8.3.0",
+]
+
+[project.optional-dependencies]
+jupyter = [
+    "IPython>=7.0.0",
+    "jupyter>=1.0.0",
+]
+offline = [
+    "moderngl>=5.6.0",
+    "PyOpenGL>=3.1.0",
+]
+torch = [
+    "torch>=1.9.0",
+]
+dev = [
+    "pytest>=6.0.0",
+    "black>=21.0.0",
+    "flake8>=3.9.0",
+]
+all = [
+    "sysl[jupyter,offline,torch]",
+]
+
+[project.urls]
+Homepage = "https://github.com/bardofcodes/sysl"
+Documentation = "https://github.com/bardofcodes/sysl#readme"
+Repository = "https://github.com/bardofcodes/sysl.git"
+Issues = "https://github.com/bardofcodes/sysl/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sysl*"]
+
+[tool.setuptools.package-data]
+"sysl.shader_runtime" = ["templates/*.j2", "templates/*.html", "templates/*.frag"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+    | __pycache__
+)/
+'''
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+
+
+
+
