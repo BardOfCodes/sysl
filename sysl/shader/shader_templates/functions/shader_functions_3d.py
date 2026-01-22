@@ -622,13 +622,13 @@ float NoParamCylinder3D( vec3 p )
   return min(max(cval.x, cval.y), 0.0) + length(max(cval, 0.0));
 }""")
 
-InexactSuperQuadrics3D = register_shader_module("""
-@name InexactSuperQuadrics3D
+InexactSuperQuadric3D = register_shader_module("""
+@name InexactSuperQuadric3D
 @inputs pos, a, b, c
 @outputs dist
 @dependencies
 @vardeps EPSILON
-float InexactSuperQuadrics3D( vec3 p, vec3 skew_vec, float epsilon_1, float epsilon_2 )
+float InexactSuperQuadric3D( vec3 p, vec3 skew_vec, float epsilon_1, float epsilon_2 )
 {
   vec3 q = abs(p);
   float out_1 = pow(q.x / skew_vec.x, 2.0 / (epsilon_2 + EPSILON));

@@ -96,11 +96,23 @@ function handleCanvasClick(event) {
     return;
   }
   
-  // Read the vec2 pixel data (distance, primitive_id)
-  const pixelData = readPixelFromFBO(gl, targetFBO, x, y, 2);
+  // Read the vec4 pixel data (distance, primitive_id, normal_x, normal_y)
+  const pixelData = readPixelFromFBO(gl, targetFBO, x, y, 4);
   
-  // Extract primitive ID (second component of vec2)
+  // Log raw pixel data for debugging
+  console.log('Raw pixel data from FBO:', {
+    distance: pixelData[0],
+    primitive_id_raw: pixelData[1],
+    normal_x: pixelData[2],
+    normal_y: pixelData[3],
+    full_array: Array.from(pixelData)
+  });
+  
+  // Extract primitive ID (second component of vec4, green channel)
   selectedPrimitiveId = Math.floor(pixelData[1]);
+  
+  // Log extracted primitive ID
+  console.log('Selected Primitive ID:', selectedPrimitiveId, '(type:', typeof selectedPrimitiveId + ')');
   
   // Update UI
   const displayElement = document.getElementById('selected-primitive-id');
@@ -113,6 +125,7 @@ function handleCanvasClick(event) {
   
   // Trigger primitive editing callback if available
   if (typeof onPrimitiveSelectedForEditing === 'function') {
+    console.log('Calling onPrimitiveSelectedForEditing with ID:', selectedPrimitiveId);
     onPrimitiveSelectedForEditing(selectedPrimitiveId);
   }
 }

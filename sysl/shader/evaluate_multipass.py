@@ -49,6 +49,10 @@ def evaluate_multipass(expression: gls.GLFunction | gls.GLExpr,
     set_param_to_texture = settings.get("set_param_to_texture", False)
     AA = settings.get("variables", {}).get("_AA", 1)
 
+    if primitive_editing_mode:
+        exclude_class_set = (gls.UniformVariable, sls.MaterialV4)
+    else:
+        exclude_class_set = (gls.UniformVariable, ) 
     # ================ FIRST PASS ================
     global_sc = GlobalShaderContext()
     if map_first_pass_smg:
@@ -56,7 +60,7 @@ def evaluate_multipass(expression: gls.GLFunction | gls.GLExpr,
     else:
         first_pass_expression = expression
     if extract_vars:
-        varnamed_expr, _, var_map_base = first_pass_expression._get_varnamed_expr(exclude_uniforms=True)
+        varnamed_expr, _, var_map_base = first_pass_expression._get_varnamed_expr(exclude_class_set=exclude_class_set)
         global_sc.create_var_map(var_map_base, set_to_ubo=set_to_ubo, set_param_to_texture=set_param_to_texture)
         global_sc = rec_sdf_shader_eval(varnamed_expr, global_sc=global_sc)
     else:
@@ -96,7 +100,7 @@ def evaluate_multipass(expression: gls.GLFunction | gls.GLExpr,
         global_sc = GlobalShaderContext()
         global_sc.push_codebook("GEOM_EXPRESSION", SCENE_EXPR_PROPS)
         if extract_vars:
-            varnamed_expr, _, var_map_base = expression._get_varnamed_expr(exclude_uniforms=True)
+            varnamed_expr, _, var_map_base = expression._get_varnamed_expr(exclude_class_set=exclude_class_set)
             global_sc.create_var_map(var_map_base, set_to_ubo=set_to_ubo, set_param_to_texture=set_param_to_texture)
             global_sc = rec_sdf_shader_eval(varnamed_expr, global_sc=global_sc)
         else:

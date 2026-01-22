@@ -98,7 +98,7 @@ class mainSDFTrace(CustomFunctionShaderModule):
         self.aa = 1
 
     def register_hit(self, *args, **kwargs):
-        aa_amount = int(kwargs.get("AA", None))
+        aa_amount = int(kwargs.get("AA", 1))
         assert aa_amount is not None, "AA is required"
         self.aa = aa_amount
         

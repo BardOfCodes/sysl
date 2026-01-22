@@ -242,10 +242,10 @@ def _convert_to_atlas_texture(expr: gls.GLFunction, sketcher,
         args = expr.args
         rgb_grid = expr.get_arg(0)
         name = "texture_atlas_mod" # expr.get_arg(1).name
-        metallic = expr.get_arg(2)
-        roughness = expr.get_arg(3)
-        mrc = th.stack([metallic, roughness, th.zeros_like(metallic)], dim=0)
-        bound_threshold = DEFAULT_BOUND_THRESHOLD
+        metallic = expr.get_arg(2)# .item()
+        roughness = expr.get_arg(3)# .item()
+        mrc = th.cat([metallic, roughness, th.zeros_like(metallic)], dim=0)
+        bound_threshold = (DEFAULT_BOUND_THRESHOLD,)
         cur_shift = shifts.pop(0)
         cur_scale = scales.pop(0)
         if first_pass:

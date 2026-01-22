@@ -46,9 +46,6 @@ def recursive_gls_to_sysl(gls_expr, ind=0, version="v4", mode="complex", colors=
     else:
         return gls_expr, ind
 
-
-
-
 def recursive_sm_to_smg(gls_expr):
     if isinstance(gls_expr, gls.SmoothUnion):
         new_args = []

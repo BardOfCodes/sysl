@@ -65,11 +65,11 @@ def spherical_rgb_grid_3d(points, colors, texture_name, metallic, roughness):
 
     # Convert to spherical coords
     r = th.linalg.norm(p, dim=-1, keepdim=True)  # (N, 1)
-    dir = p / (r + 1e-8)  # normalize
+    cdir = p / (r + 1e-8)  # normalize
 
     # θ = atan(z, x), φ = acos(y)
-    theta = th.atan2(dir[:, 2], dir[:, 0])  # [-π, π]
-    phi = th.acos(th.clamp(dir[:, 1], -1.0, 1.0))  # [0, π]
+    theta = th.atan2(cdir[:, 2], cdir[:, 0])  # [-π, π]
+    phi = th.acos(th.clamp(cdir[:, 1], -1.0, 1.0))  # [0, π]
 
     # Normalize to [0,1]
     u = theta / (2 * math.pi) + 0.5

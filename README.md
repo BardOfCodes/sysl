@@ -156,8 +156,10 @@ shader_code, uniforms, textures = evaluate_to_shader(expression, settings=settin
 Post-processing effects available in multi-pass rendering:
 
 - **Outlines**: Edge detection for shape boundaries
+
 - **Selection Highlight**: Highlight specific primitives (used in editing mode)
 - **Dithering**: Stylized dither patterns
+
 - **FXAA**: Fast approximate anti-aliasing
 
 ## Project Structure

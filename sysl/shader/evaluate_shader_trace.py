@@ -149,9 +149,10 @@ def eval_extrusion_prim_sdf(expression: gls.SimpleExtrusion3D, global_sc, *args,
     global_sc.local_sc.add_dependency(func_name)
     global_sc.add_shader_module(func_name)
     
-    prim_name = f"prim_{global_sc.prim_count}"
+    prim_id = global_sc.prim_count  # Store BEFORE increment
+    prim_name = f"prim_{prim_id}"
     global_sc.prim_count += 1
-    code_line = f"vec2 {prim_name} = vec2({sdf_3d_name}, {global_sc.prim_count});"
+    code_line = f"vec2 {prim_name} = vec2({sdf_3d_name}, {prim_id});"  # Use stored value
     global_sc.local_sc.add_codeline(code_line)
     global_sc.local_sc.res_sdf_stack.append(("vec2", prim_name))
 
@@ -176,10 +177,11 @@ def eval_rev_prim_sdf(expression: gls.SimpleRevolution3D, global_sc, *args, **kw
     # Go inside the innner expr
     inner_expr = expression.args[0] 
     global_sc = rec_shader_eval(inner_expr, global_sc, *args, **kwargs)
-    prim_name = f"prim_{global_sc.prim_count}"
+    prim_id = global_sc.prim_count  # Store BEFORE increment
+    prim_name = f"prim_{prim_id}"
     global_sc.prim_count += 1
     res_type, sdf_name = global_sc.local_sc.res_sdf_stack.pop()
-    code_line = f"vec2 {prim_name} = vec2({sdf_name}, {global_sc.prim_count});"
+    code_line = f"vec2 {prim_name} = vec2({sdf_name}, {prim_id});"  # Use stored value
     global_sc.local_sc.add_codeline(code_line)
     global_sc.local_sc.res_sdf_stack.append(("vec2", prim_name))
 
@@ -203,9 +205,10 @@ def eval_prim_sdf(expression: gls.Primitive3D, global_sc) -> GlobalShaderContext
     global_sc.local_sc.add_codeline(code_line)
     global_sc.local_sc.add_dependency(func_name)
     global_sc.add_shader_module(func_name)
-    prim_name = f"prim_{global_sc.prim_count}"
+    prim_id = global_sc.prim_count  # Store BEFORE increment
+    prim_name = f"prim_{prim_id}"
     global_sc.prim_count += 1
-    code_line = f"vec2 {prim_name} = vec2({sdf_name}, {global_sc.prim_count});"
+    code_line = f"vec2 {prim_name} = vec2({sdf_name}, {prim_id});"  # Use stored value
     global_sc.local_sc.add_codeline(code_line)
     global_sc.local_sc.res_sdf_stack.append(("vec2", prim_name))
 

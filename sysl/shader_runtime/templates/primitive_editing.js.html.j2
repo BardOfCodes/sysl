@@ -1,15 +1,448 @@
 // Primitive Editing - Manipulate primitives by updating shader #defines
 
-// Store auxiliary data
 const primitiveAuxiliary = {{ auxiliary | tojson }};
-const varMap = JSON.parse(JSON.stringify(primitiveAuxiliary.var_map || {}));  // Deep copy
+const varMap = JSON.parse(JSON.stringify(primitiveAuxiliary.var_map || {}));
 const primitiveMap = primitiveAuxiliary.primitive_map || {};
-const editingUniforms = primitiveAuxiliary.uniforms || {};
-const uniformMap = primitiveAuxiliary.uniform_map || {};  // Maps index to uniform name
+const uniformMap = primitiveAuxiliary.uniform_map || {};
 
-// Track current editing state
 let currentEditingPrimitive = null;
-const originalVarMap = JSON.parse(JSON.stringify(varMap));  // Keep original for export comparison
+
+const axisEditState = {
+  mode: null,  // 'translate', 'scale', 'rotate', or null
+  axis: null,  // 'x', 'y', 'z', 'free', or 'uniform' (for uniform scale)
+  isActive: false,
+  startMouseX: 0,
+  startMouseY: 0,
+  startValue: null,
+  uniformName: null,
+  axisIndex: 0,  // 0=x, 1=y, 2=z
+  isEditing: false  // True when actively transforming
+};
+
+/**
+ * Calculate camera matrix based on shader's setCamera implementation
+ * Returns camera basis vectors (right, up, forward)
+ */
+function getCameraMatrix() {
+  const cameraAngleX = uniformValues.cameraAngleX || 0;
+  const cameraAngleY = uniformValues.cameraAngleY || 0;
+  const cameraDistance = uniformValues.cameraDistance || 5;
+  const cameraOrigin = uniformValues.cameraOrigin || [0, 0, 0];
+  
+  // Target position (ta): cameraOrigin + vec3(0, 1, 0)
+  const ta = [
+    cameraOrigin[0],
+    cameraOrigin[1] + 1.0,
+    cameraOrigin[2]
+  ];
+  
+  // Camera position (ro) in spherical coordinates
+  const cosX = Math.cos(cameraAngleX);
+  const sinX = Math.sin(cameraAngleX);
+  const cosY = Math.cos(cameraAngleY);
+  const sinY = Math.sin(cameraAngleY);
+  
+  const ro = [
+    ta[0] + cameraDistance * cosX * sinY,
+    ta[1] + cameraDistance * sinX,
+    ta[2] + cameraDistance * cosX * cosY
+  ];
+  
+  // Camera forward direction (cw in shader)
+  const cw = [
+    ta[0] - ro[0],
+    ta[1] - ro[1],
+    ta[2] - ro[2]
+  ];
+  
+  // Normalize cw
+  const cwLen = Math.sqrt(cw[0]*cw[0] + cw[1]*cw[1] + cw[2]*cw[2]);
+  cw[0] /= cwLen;
+  cw[1] /= cwLen;
+  cw[2] /= cwLen;
+  
+  // Camera rotation (cr) is 0 in your shader
+  const cr = 0;
+  const cp = [Math.sin(cr), Math.cos(cr), 0];  // [0, 1, 0] when cr=0
+  
+  // Camera right (cu in shader) = cross(cw, cp)
+  const cu = [
+    cw[1] * cp[2] - cw[2] * cp[1],
+    cw[2] * cp[0] - cw[0] * cp[2],
+    cw[0] * cp[1] - cw[1] * cp[0]
+  ];
+  
+  // Normalize cu
+  const cuLen = Math.sqrt(cu[0]*cu[0] + cu[1]*cu[1] + cu[2]*cu[2]);
+  if (cuLen > 0.0001) {
+    cu[0] /= cuLen;
+    cu[1] /= cuLen;
+    cu[2] /= cuLen;
+  }
+  
+  // Camera up (cv in shader) = cross(cu, cw)
+  const cv = [
+    cu[1] * cw[2] - cu[2] * cw[1],
+    cu[2] * cw[0] - cu[0] * cw[2],
+    cu[0] * cw[1] - cu[1] * cw[0]
+  ];
+  
+  return { right: cu, up: cv, forward: cw };
+}
+
+/**
+ * Shows/hides axis editing indicator
+ */
+function showAxisEditIndicator() {
+  let indicator = document.getElementById('axis-edit-indicator');
+  
+  if (!indicator && axisEditState.isActive) {
+    // Create indicator if it doesn't exist
+    indicator = document.createElement('div');
+    indicator.id = 'axis-edit-indicator';
+    indicator.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(100, 200, 100, 0.9);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      font-family: monospace;
+      font-size: 14px;
+      z-index: 10000;
+      pointer-events: none;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    `;
+    document.body.appendChild(indicator);
+  } else if (indicator && !axisEditState.isActive) {
+    indicator.remove();
+    return;
+  }
+  
+  if (indicator) {
+    const modeText = axisEditState.mode === 'translate' ? 'TRANSLATE' : 
+                     axisEditState.mode === 'scale' ? 'SCALE' : 
+                     axisEditState.mode === 'rotate' ? 'ROTATE' : '';
+    let displayText = '';
+    
+    if (axisEditState.isEditing) {
+      const axisText = axisEditState.axis === 'free' ? 'FREE' : 
+                      axisEditState.axis === 'uniform' ? 'UNIFORM' :
+                      axisEditState.axis ? axisEditState.axis.toUpperCase() : '';
+      displayText = `🟢 ${modeText} ${axisText} - Move mouse | Left-click: confirm | Right-click: cancel`;
+      indicator.style.background = 'rgba(100, 200, 100, 0.9)';
+    } else if (axisEditState.mode === 'translate') {
+      displayText = `⏸️ TRANSLATE - Move mouse for free | X/Y/Z for axis | ESC to cancel`;
+      indicator.style.background = 'rgba(200, 150, 50, 0.9)';
+    } else if (axisEditState.mode === 'scale') {
+      displayText = `⏸️ SCALE - Move mouse for uniform | X/Y/Z for axis | ESC to cancel`;
+      indicator.style.background = 'rgba(200, 150, 50, 0.9)';
+    } else if (axisEditState.mode === 'rotate') {
+      displayText = `⏸️ ROTATE - Press X/Y/Z for axis | ESC to cancel`;
+      indicator.style.background = 'rgba(200, 150, 50, 0.9)';
+    }
+    
+    indicator.innerHTML = displayText;
+  }
+}
+
+/**
+ * Gets the appropriate uniform name for the current mode
+ */
+function getModeUniformName(mode) {
+  if (currentEditingPrimitive === null) return null;
+  
+  // Check uniformMap for the appropriate uniform
+  for (let [idx, uniformName] of Object.entries(uniformMap)) {
+    if (mode === 'translate' && uniformName === 'translate') {
+      return 'translate';
+    }
+    if (mode === 'scale' && uniformName === 'size') {
+      return 'size';
+    }
+    if (mode === 'rotate' && uniformName === 'axis_angle') {
+      return 'axis_angle';
+    }
+  }
+  
+  // Fallback to check for similar names
+  for (let [idx, uniformName] of Object.entries(uniformMap)) {
+    if (uniformName) {
+      if (mode === 'translate' && (uniformName.includes('translate') || uniformName.includes('position'))) {
+        return uniformName;
+      }
+      if (mode === 'scale' && (uniformName.includes('scale') || uniformName.includes('size'))) {
+        return uniformName;
+      }
+      if (mode === 'rotate' && (uniformName.includes('rotate') || uniformName.includes('angle') || uniformName.includes('orientation'))) {
+        return uniformName;
+      }
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Start axis editing mode
+ */
+function startAxisEdit(mode) {
+  if (currentEditingPrimitive === null) {
+    console.warn('No primitive selected for editing');
+    return false;
+  }
+  
+  const uniformName = getModeUniformName(mode);
+  
+  if (!uniformName) {
+    console.warn(`No ${mode} uniform available for this primitive`);
+    return false;
+  }
+  
+  // Verify the uniform exists and has a value
+  if (!uniformValues[uniformName]) {
+    console.warn(`Uniform ${uniformName} does not exist in uniformValues`);
+    return false;
+  }
+  
+  axisEditState.mode = mode;
+  axisEditState.axis = null;
+  axisEditState.isActive = true;
+  axisEditState.uniformName = uniformName;
+  
+  showAxisEditIndicator();
+  
+  // Lock camera controls
+  if (typeof mouseControl !== 'undefined' && mouseControl) {
+    window._axisEditSavedMouseControl = mouseControl;
+    mouseControl = false;
+  }
+  
+  return true;
+}
+
+/**
+ * Set the axis for editing
+ */
+function setEditAxis(axis) {
+  if (!axisEditState.isActive || !axisEditState.mode) return;
+  
+  // Don't change axis if already editing
+  if (axisEditState.isEditing) return;
+  
+  axisEditState.axis = axis;
+  axisEditState.axisIndex = axis === 'x' ? 0 : axis === 'y' ? 1 : 2;
+  
+  // Update indicator
+  showAxisEditIndicator();
+}
+
+/**
+ * Cancel axis editing
+ */
+function cancelAxisEdit() {
+  if (!axisEditState.isActive) return;
+  
+  // Restore original value if we were editing
+  if (axisEditState.startValue && axisEditState.uniformName && axisEditState.isEditing) {
+    uniformValues[axisEditState.uniformName] = [...axisEditState.startValue];
+    updateUIForUniform(axisEditState.uniformName, axisEditState.startValue);
+  }
+  
+  // Reset state
+  axisEditState.mode = null;
+  axisEditState.axis = null;
+  axisEditState.isActive = false;
+  axisEditState.startValue = null;
+  axisEditState.uniformName = null;
+  axisEditState.isEditing = false;
+  
+  // Restore camera controls
+  if (window._axisEditSavedMouseControl !== undefined) {
+    mouseControl = window._axisEditSavedMouseControl;
+    delete window._axisEditSavedMouseControl;
+  }
+  
+  // Reset cursor
+  canvas.style.cursor = 'default';
+  
+  showAxisEditIndicator();
+}
+
+/**
+ * Confirm axis editing (save the value)
+ */
+function confirmAxisEdit() {
+  if (!axisEditState.isActive) return;
+  
+  // Save the new value to var_map if we were editing
+  if (axisEditState.isEditing) {
+    saveUniformsToVarMap();
+  }
+  
+  // Reset state
+  axisEditState.mode = null;
+  axisEditState.axis = null;
+  axisEditState.isActive = false;
+  axisEditState.startValue = null;
+  axisEditState.uniformName = null;
+  axisEditState.isEditing = false;
+  
+  // Restore camera controls
+  if (window._axisEditSavedMouseControl !== undefined) {
+    mouseControl = window._axisEditSavedMouseControl;
+    delete window._axisEditSavedMouseControl;
+  }
+  
+  // Reset cursor
+  canvas.style.cursor = 'default';
+  
+  showAxisEditIndicator();
+}
+
+/**
+ * Handle mouse move for axis editing
+ */
+function handleAxisMouseMove(event) {
+  if (!axisEditState.isActive) return;
+  
+  // Stop camera controls from handling this event
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  event.preventDefault();
+  
+  // Start editing if not already editing
+  if (!axisEditState.isEditing) {
+    // Get current value
+    const currentValue = uniformValues[axisEditState.uniformName];
+    if (!currentValue || !Array.isArray(currentValue)) {
+      console.warn('Invalid uniform value');
+      cancelAxisEdit();
+      return;
+    }
+    
+    // Store initial state
+    axisEditState.startValue = [...currentValue];
+    axisEditState.startMouseX = event.clientX;
+    axisEditState.startMouseY = event.clientY;
+    axisEditState.isEditing = true;
+    
+    // Determine axis/mode if not set
+    if (!axisEditState.axis) {
+      if (axisEditState.mode === 'translate') {
+        axisEditState.axis = 'free';
+      } else if (axisEditState.mode === 'scale') {
+        axisEditState.axis = 'uniform';
+      } else {
+        // Rotation requires axis selection
+        return;
+      }
+    }
+    
+    canvas.style.cursor = axisEditState.axis === 'free' ? 'move' : 'ew-resize';
+    showAxisEditIndicator();
+  }
+  
+  if (!axisEditState.startValue) return;
+  
+  const camDistance = uniformValues.cameraDistance || 5;
+  const newValue = [...axisEditState.startValue];
+  
+  if (axisEditState.axis === 'free') {
+    // Free translation using camera matrix
+    const deltaX = event.clientX - axisEditState.startMouseX;
+    const deltaY = event.clientY - axisEditState.startMouseY;
+    
+    // Get camera basis vectors
+    const { right, up } = getCameraMatrix();
+    
+    // Sensitivity scales with camera distance
+    const sensitivity = camDistance * 0.003;
+    
+    // Calculate movement in world space
+    newValue[0] = axisEditState.startValue[0] + (right[0] * deltaX - up[0] * deltaY) * sensitivity;
+    newValue[1] = axisEditState.startValue[1] + (right[1] * deltaX - up[1] * deltaY) * sensitivity;
+    newValue[2] = axisEditState.startValue[2] + (right[2] * deltaX - up[2] * deltaY) * sensitivity;
+    
+  } else if (axisEditState.axis === 'uniform') {
+    // Uniform scaling based on distance moved
+    const deltaX = event.clientX - axisEditState.startMouseX;
+    const deltaY = event.clientY - axisEditState.startMouseY;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY) * (deltaX >= 0 ? 1 : -1);
+    
+    const sensitivity = 0.005;
+    const scaleFactor = 1.0 + distance * sensitivity;
+    
+    newValue[0] = axisEditState.startValue[0] * Math.max(0.01, scaleFactor);
+    newValue[1] = axisEditState.startValue[1] * Math.max(0.01, scaleFactor);
+    newValue[2] = axisEditState.startValue[2] * Math.max(0.01, scaleFactor);
+    
+  } else if (axisEditState.axis === 'x' || axisEditState.axis === 'y' || axisEditState.axis === 'z') {
+    // Axis-constrained movement
+    const deltaX = event.clientX - axisEditState.startMouseX;
+    
+    if (axisEditState.mode === 'translate') {
+      const sensitivity = camDistance * 0.005;
+      newValue[axisEditState.axisIndex] = axisEditState.startValue[axisEditState.axisIndex] + deltaX * sensitivity;
+      
+    } else if (axisEditState.mode === 'scale') {
+      const sensitivity = 0.01;
+      const scaleFactor = 1.0 + deltaX * sensitivity;
+      newValue[axisEditState.axisIndex] = axisEditState.startValue[axisEditState.axisIndex] * Math.max(0.01, scaleFactor);
+      
+    } else if (axisEditState.mode === 'rotate') {
+      // For rotation, assuming axis_angle is vec4 (x,y,z,angle) where xyz is axis
+      const sensitivity = 0.01;  // radians per pixel
+      const angleIndex = 3;  // Assuming angle is the 4th component
+      
+      // If it's a vec4 with axis and angle
+      if (axisEditState.startValue.length === 4) {
+        newValue[angleIndex] = axisEditState.startValue[angleIndex] + deltaX * sensitivity;
+      } else {
+        // If it's vec3, treat as Euler angles
+        newValue[axisEditState.axisIndex] = axisEditState.startValue[axisEditState.axisIndex] + deltaX * sensitivity;
+      }
+    }
+  }
+  
+  uniformValues[axisEditState.uniformName] = newValue;
+  updateUIForUniform(axisEditState.uniformName, newValue);
+}
+
+/**
+ * Handle mouse down for axis editing (left-click to confirm)
+ */
+function handleAxisMouseDown(event) {
+  if (!axisEditState.isActive || !axisEditState.isEditing) return;
+  
+  // Only handle left click (button 0)
+  if (event.button !== 0) return;
+  
+  // Stop camera controls from handling this event
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  event.preventDefault();
+  
+  // Left-click confirms the edit
+  confirmAxisEdit();
+}
+
+/**
+ * Handle right-click for axis editing (cancel)
+ */
+function handleAxisRightClick(event) {
+  if (!axisEditState.isActive) return;
+  
+  // Stop default context menu and camera controls
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  event.preventDefault();
+  
+  // Right-click cancels the edit
+  cancelAxisEdit();
+}
 
 /**
  * Formats a value for #define statement
@@ -29,38 +462,30 @@ function formatDefineValue(value) {
   return String(value);
 }
 
-/**
- * Generates #define block from var_map
- * @param {number|null} selectedPrimitive - The primitive ID being edited (null for none)
- * @returns {string} The #define block as a string
- */
+function getUniformName(index) {
+  return uniformMap[String(index)] !== undefined ? uniformMap[String(index)] : (uniformMap[index] !== undefined ? uniformMap[index] : null);
+}
+
 function generateDefineBlock(selectedPrimitive) {
-  // Get variable names for the selected primitive
-  const selectedVars = selectedPrimitive !== null ? (primitiveMap[selectedPrimitive] || []) : [];
+  const primitiveParameterBundle = selectedPrimitive !== null ? 
+    (primitiveMap[selectedPrimitive] || primitiveMap[String(selectedPrimitive)] || []) : [];
   
-  // Map selected vars to uniform names using the uniform_map
   const varToUniform = {};
   
-  if (selectedVars.length > 0) {
-    selectedVars.forEach((varName, idx) => {
-      // Check both numeric and string keys since JSON might convert them
-      const uniformName = uniformMap[idx] !== undefined ? uniformMap[idx] : uniformMap[String(idx)];
-      
-      // Only map if uniform name exists and is not empty string
-      if (uniformName !== undefined && uniformName !== null && uniformName !== "") {
-        varToUniform[varName] = uniformName;
-      }
-    });
+  for (let j = 0; j < primitiveParameterBundle.length; j++) {
+    const varName = primitiveParameterBundle[j];
+    const uniformName = getUniformName(j);
+    
+    if (uniformName !== undefined && uniformName !== null && uniformName !== "") {
+      varToUniform[varName] = uniformName;
+    }
   }
   
-  // Generate #define statements
   const defines = [];
   for (const [varName, value] of Object.entries(varMap)) {
     if (varToUniform[varName]) {
-      // Use uniform name instead of hardcoded value
       defines.push(`#define ${varName} ${varToUniform[varName]}`);
     } else {
-      // Use hardcoded value from var_map
       defines.push(`#define ${varName} ${formatDefineValue(value)}`);
     }
   }
@@ -117,58 +542,42 @@ function updateShadersForPrimitive(selectedPrimitive) {
   });
 }
 
-/**
- * Saves current uniform values to var_map for the current primitive
- */
 function saveUniformsToVarMap() {
   if (currentEditingPrimitive === null) return;
   
-  const selectedVars = primitiveMap[currentEditingPrimitive] || [];
+  const primitiveParameterBundle = primitiveMap[currentEditingPrimitive] || primitiveMap[String(currentEditingPrimitive)] || [];
   
-  selectedVars.forEach((varName, idx) => {
-    // Check both numeric and string keys
-    const uniformName = uniformMap[idx] !== undefined ? uniformMap[idx] : uniformMap[String(idx)];
+  for (let j = 0; j < primitiveParameterBundle.length; j++) {
+    const varName = primitiveParameterBundle[j];
+    const uniformName = getUniformName(j);
     
-    // Only save if uniform name exists and is not empty string
     if (uniformName !== undefined && uniformName !== null && uniformName !== "") {
       const uniformValue = uniformValues[uniformName];
-      
       if (uniformValue !== undefined) {
         varMap[varName] = Array.isArray(uniformValue) ? [...uniformValue] : uniformValue;
       }
     }
-  });
+  }
 }
 
-/**
- * Loads uniform values from var_map for a primitive
- * @param {number} primitiveId - The primitive ID to load
- */
 function loadUniformsFromVarMap(primitiveId) {
-  const selectedVars = primitiveMap[primitiveId] || [];
+  const primitiveParameterBundle = primitiveMap[primitiveId] || primitiveMap[String(primitiveId)] || [];
   
-  selectedVars.forEach((varName, idx) => {
-    // Check both numeric and string keys
-    const uniformName = uniformMap[idx] !== undefined ? uniformMap[idx] : uniformMap[String(idx)];
+  for (let j = 0; j < primitiveParameterBundle.length; j++) {
+    const varName = primitiveParameterBundle[j];
+    const uniformName = getUniformName(j);
     
-    // Only load if uniform name exists and is not empty string
     if (uniformName !== undefined && uniformName !== null && uniformName !== "") {
       const value = varMap[varName];
-      
       if (value !== undefined) {
-        // Create a deep copy to avoid reference issues
         const newValue = Array.isArray(value) ? [...value] : value;
         uniformValues[uniformName] = newValue;
-        
-        // Update UI controls - this sets slider positions
         updateUIForUniform(uniformName, newValue);
         
-        // For vectors, also make sure all components are individually accessible
         if (Array.isArray(newValue)) {
           const components = ['x', 'y', 'z', 'w'];
           newValue.forEach((v, i) => {
             const componentKey = `${uniformName}_${components[i]}`;
-            // Some UI frameworks might track individual components
             if (uniformValues[componentKey] !== undefined) {
               uniformValues[componentKey] = v;
             }
@@ -176,7 +585,7 @@ function loadUniformsFromVarMap(primitiveId) {
         }
       }
     }
-  });
+  }
 }
 
 /**
@@ -211,32 +620,17 @@ function updateUIForUniform(uniformName, value) {
   }
 }
 
-/**
- * Handles primitive selection for editing
- * @param {number} primitiveId - The selected primitive ID
- */
 function onPrimitiveSelectedForEditing(primitiveId) {
-  // Save current uniform values to var_map
   if (currentEditingPrimitive !== null) {
     saveUniformsToVarMap();
   }
   
-  // Update current primitive
   currentEditingPrimitive = primitiveId;
-  
-  // Update shaders with new primitive FIRST
   updateShadersForPrimitive(primitiveId);
-  
-  // THEN load uniform values from var_map for new primitive
-  // This ensures uniformValues is properly set before any slider events
   loadUniformsFromVarMap(primitiveId);
 }
 
-/**
- * Exports the current var_map as JSON
- */
 function exportVarMap() {
-  // Save current uniform values first
   if (currentEditingPrimitive !== null) {
     saveUniformsToVarMap();
   }
@@ -253,6 +647,83 @@ function exportVarMap() {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+
+// Keyboard event for axis editing
+document.addEventListener('keydown', (event) => {
+  // Don't activate if typing in an input field
+  if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+    return;
+  }
+  
+  const key = event.key.toLowerCase();
+  
+  // Check for mode activation (G for translate, S for scale, R for rotate)
+  if (!axisEditState.isActive) {
+    if (key === 'g') {
+      if (startAxisEdit('translate')) {
+        event.preventDefault();
+      }
+    } else if (key === 's') {
+      if (startAxisEdit('scale')) {
+        event.preventDefault();
+      }
+    } else if (key === 'r') {
+      if (startAxisEdit('rotate')) {
+        event.preventDefault();
+      }
+    }
+  } 
+  // If already in axis edit mode
+  else {
+    // Check for axis selection
+    if (key === 'x' || key === 'y' || key === 'z') {
+      setEditAxis(key);
+      event.preventDefault();
+    }
+    // Cancel on ESC or repeated mode key
+    else if (key === 'escape' || 
+             (axisEditState.mode === 'translate' && key === 'g') ||
+             (axisEditState.mode === 'scale' && key === 's') ||
+             (axisEditState.mode === 'rotate' && key === 'r')) {
+      cancelAxisEdit();
+      event.preventDefault();
+    }
+    // Cancel on any other key except modifiers
+    else if (key !== 'shift' && key !== 'control' && key !== 'alt' && key !== 'meta') {
+      cancelAxisEdit();
+    }
+  }
+});
+
+// Mouse events for axis editing - use capture phase to intercept before camera
+canvas.addEventListener('mousedown', (event) => {
+  if (axisEditState.isActive) {
+    handleAxisMouseDown(event);
+  }
+}, true);
+
+window.addEventListener('mousemove', (event) => {
+  if (axisEditState.isActive) {
+    handleAxisMouseMove(event);
+  }
+}, true);
+
+// Right-click to cancel
+canvas.addEventListener('contextmenu', (event) => {
+  if (axisEditState.isActive) {
+    handleAxisRightClick(event);
+  }
+}, true);
+
+// Prevent wheel zoom during axis editing
+canvas.addEventListener('wheel', (event) => {
+  if (axisEditState.isActive) {
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    event.preventDefault();
+  }
+}, true);
 
 // Set up export button
 document.getElementById('export-varmap-btn')?.addEventListener('click', exportVarMap);

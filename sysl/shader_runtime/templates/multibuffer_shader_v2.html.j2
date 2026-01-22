@@ -29,27 +29,24 @@
               </summary>
               <div class="px-3 pb-3 space-y-4">
                 <!-- Play/Pause Controls -->
-                <div class="flex gap-2 pt-3">
-                  <button id="play-pause-btn" class="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded font-medium transition-colors">
+                <div class="flex flex-wrap gap-2 pt-3">
+                  <button id="play-pause-btn" class="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded font-medium transition-colors whitespace-nowrap">
                     Pause
                   </button>
-                  <button id="step-btn" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded font-medium transition-colors">
+                  <button id="step-btn" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded font-medium transition-colors whitespace-nowrap">
                     Step Frame
                   </button>
-                  <button id="reset-btn" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded font-medium transition-colors">
+                  <button id="reset-btn" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded font-medium transition-colors whitespace-nowrap">
                     Reset Buffers
                   </button>
                 </div>
                 
                 <!-- Debug Info -->
-                <div class="bg-white border border-gray-200 rounded p-3 font-mono text-sm">
-                  <div class="mb-1">
-                    <span class="font-semibold text-gray-700">Frame:</span> 
-                    <span id="frame-num" class="text-blue-600">0</span> | 
-                    <span class="font-semibold text-gray-700">FPS:</span> 
-                    <span id="fps-display" class="text-blue-600">0</span> | 
-                    <span class="font-semibold text-gray-700">Status:</span> 
-                    <span id="status" class="text-green-600">Playing</span>
+                <div class="bg-white border border-gray-200 rounded p-3 font-mono text-sm overflow-hidden">
+                  <div class="mb-1 flex flex-wrap gap-x-2 gap-y-1">
+                    <span class="whitespace-nowrap"><span class="font-semibold text-gray-700">Frame:</span> <span id="frame-num" class="text-blue-600">0</span></span>
+                    <span class="whitespace-nowrap"><span class="font-semibold text-gray-700">FPS:</span> <span id="fps-display" class="text-blue-600">0</span></span>
+                    <span class="whitespace-nowrap"><span class="font-semibold text-gray-700">Status:</span> <span id="status" class="text-green-600">Playing</span></span>
                   </div>
                   <div id="buffer-state" class="text-xs text-gray-500 mt-2"></div>
                 </div>
