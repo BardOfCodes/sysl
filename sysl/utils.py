@@ -3,6 +3,8 @@ import numpy as np
 from geolipi.symbolic.symbol_types import PRIM_TYPE
 import sysl.symbolic as sls
 import geolipi.symbolic as gls
+from PIL import Image
+from typing import List, Literal
 
 def recursive_gls_to_sysl(gls_expr, ind=0, version="v4", mode="complex", colors=None):
     if isinstance(gls_expr, gls.GLBase):
@@ -69,3 +71,103 @@ def recursive_sm_to_smg(gls_expr):
             return gls_expr.__class__(*new_args)
         else:
             return gls_expr
+
+
+def frames_to_animation(
+    frames: List[Image.Image],
+    output_path: str,
+    fps: int = 10,
+    format: Literal['gif', 'webp', 'mp4'] = 'gif',
+    mp4_quality: Literal['lossless', 'high', 'medium'] = 'high',
+) -> str:
+    """
+    Takes a sequence of PIL Image frames and saves them as an animated GIF, WebP, or MP4.
+
+    Parameters:
+    - frames (List[Image.Image]): List of PIL Image frames.
+    - output_path (str): Path where the animation file will be saved.
+    - fps (int): Frames per second for the animation. Default is 10.
+    - format (str): Output format: 'gif', 'webp', or 'mp4'. Default is 'gif'.
+    - mp4_quality (str): Quality for MP4 encoding. Only used when format='mp4'.
+        - 'lossless': No compression (CRF 0, very large files)
+        - 'high': Visually lossless (CRF 17, recommended for quality)
+        - 'medium': Good quality with smaller file size (CRF 23)
+
+    Returns:
+    - str: The path to the saved animation file.
+    """
+    if not frames:
+        raise ValueError("No frames provided")
+    
+    # Ensure all frames have the same size (resize to first frame's size)
+    base_size = frames[0].size
+    frames = [f.resize(base_size, Image.Resampling.LANCZOS) if f.size != base_size else f 
+              for f in frames]
+    
+    # Calculate duration in milliseconds
+    duration_ms = int(1000 / fps)
+    
+    # Ensure correct file extension
+    if not output_path.lower().endswith(f'.{format}'):
+        output_path = f"{output_path}.{format}"
+    
+    # Save animation
+    if format == 'gif':
+        # Convert RGBA to P mode for better GIF support
+        frames_p = [f.convert('P', palette=Image.Palette.ADAPTIVE, colors=256) for f in frames]
+        frames_p[0].save(
+            output_path,
+            save_all=True,
+            append_images=frames_p[1:],
+            duration=duration_ms,
+            loop=0,  # 0 = infinite loop
+            optimize=True
+        )
+    elif format == 'webp':
+        frames[0].save(
+            output_path,
+            save_all=True,
+            append_images=frames[1:],
+            duration=duration_ms,
+            loop=0,
+            lossless=True
+        )
+    elif format == 'mp4':
+        import imageio.v3 as iio
+        import numpy as np
+        
+        # CRF values: 0 = lossless, 17 = visually lossless, 23 = default
+        crf_map = {'lossless': 0, 'high': 17, 'medium': 23}
+        crf = crf_map.get(mp4_quality, 17)
+        
+        # Convert PIL Images to numpy arrays (RGB, not RGBA for MP4)
+        frame_arrays = [np.array(f.convert('RGB')) for f in frames]
+        
+        # Build ffmpeg output parameters for high quality
+        if mp4_quality == 'lossless':
+            # Use FFV1 codec for truly lossless, or x264 with crf=0
+            codec = 'libx264'
+            output_params = [
+                '-crf', '0',
+                '-preset', 'veryslow',
+                '-pix_fmt', 'yuv444p',  # No chroma subsampling for lossless
+            ]
+        else:
+            codec = 'libx264'
+            output_params = [
+                '-crf', str(crf),
+                '-preset', 'slow',  # Better compression at cost of encoding time
+                '-pix_fmt', 'yuv420p',  # Standard compatibility
+                '-profile:v', 'high',
+                '-level', '4.2',
+            ]
+        
+        iio.imwrite(
+            output_path,
+            frame_arrays,
+            fps=fps,
+            codec=codec,
+            output_params=output_params,
+        )
+    
+    return output_path
