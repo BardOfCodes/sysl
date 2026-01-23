@@ -133,41 +133,33 @@ def frames_to_animation(
             lossless=True
         )
     elif format == 'mp4':
-        import imageio.v3 as iio
+        import imageio.v2 as iio
         import numpy as np
-        
-        # CRF values: 0 = lossless, 17 = visually lossless, 23 = default
-        crf_map = {'lossless': 0, 'high': 17, 'medium': 23}
+
+        crf_map = {"lossless": 0, "high": 17, "medium": 23}
         crf = crf_map.get(mp4_quality, 17)
-        
-        # Convert PIL Images to numpy arrays (RGB, not RGBA for MP4)
-        frame_arrays = [np.array(f.convert('RGB')) for f in frames]
-        
-        # Build ffmpeg output parameters for high quality
-        if mp4_quality == 'lossless':
-            # Use FFV1 codec for truly lossless, or x264 with crf=0
-            codec = 'libx264'
-            output_params = [
-                '-crf', '0',
-                '-preset', 'veryslow',
-                '-pix_fmt', 'yuv444p',  # No chroma subsampling for lossless
-            ]
+
+        frame_arrays = [np.asarray(f.convert("RGB")) for f in frames]
+
+        codec = "libx264"
+        if mp4_quality == "lossless":
+            output_params = ["-crf", "0", "-preset", "veryslow", "-pix_fmt", "yuv444p"]
+            pixelformat = "yuv444p"
         else:
-            codec = 'libx264'
-            output_params = [
-                '-crf', str(crf),
-                '-preset', 'slow',  # Better compression at cost of encoding time
-                '-pix_fmt', 'yuv420p',  # Standard compatibility
-                '-profile:v', 'high',
-                '-level', '4.2',
-            ]
-        
-        iio.imwrite(
+            output_params = ["-crf", str(crf), "-preset", "slow", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.2"]
+            pixelformat = "yuv420p"
+
+        w = iio.get_writer(
             output_path,
-            frame_arrays,
+            format="FFMPEG",
+            mode="I",
             fps=fps,
             codec=codec,
             output_params=output_params,
+            pixelformat=pixelformat,
         )
+        for fr in frame_arrays:
+            w.append_data(fr)
+        w.close()
     
     return output_path

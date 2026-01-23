@@ -531,7 +531,7 @@ def render_multipass(
 # Helper Functions
 # =============================================================================
 
-def _create_context():
+def _create_context_2():
     """Create a ModernGL standalone context with fallbacks."""
     moderngl = _ensure_moderngl()
     try:
@@ -541,6 +541,34 @@ def _create_context():
             return moderngl.create_standalone_context()
         except Exception as e:
             raise RuntimeError(f"Failed to create OpenGL context: {e}")
+
+def _create_context():
+    """Create a ModernGL standalone context with fallbacks."""
+    moderngl = _ensure_moderngl()
+    
+    # Try EGL backend first (for headless rendering)
+    try:
+        return moderngl.create_context(standalone=True, backend='egl', require=330)
+    except Exception:
+        pass
+    
+    # Fallback: try EGL without version requirement
+    try:
+        return moderngl.create_context(standalone=True, backend='egl')
+    except Exception:
+        pass
+    
+    # Fallback: try default backend (for systems with display)
+    try:
+        return moderngl.create_context(standalone=True, require=330)
+    except Exception:
+        pass
+    
+    # Last resort: try without version requirement
+    try:
+        return moderngl.create_context(standalone=True)
+    except Exception as e:
+        raise RuntimeError(f"Failed to create OpenGL context: {e}")
 
 
 def _create_fbo(ctx, width: int, height: int, fbo_type: str):
