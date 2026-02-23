@@ -193,6 +193,53 @@ GEOM_ONLY_SMOOTH_UNION_ARITY_MAP = {
     ("vec4", 2): GEOM_ONLY_SMOOTH_UNION_VEC_CODE.substitute(type="vec4"),
     ("MATPoint", 2): GEOM_ONLY_SMOOTH_UNION_VEC_CODE.substitute(type="MATPoint"),
 }
+# SMOOTH UNION MIXED TEMPLATES
+SMOOTH_UNION_MIXED_FLOAT_CODE = """
+float SmoothUnionMixed( float res1, float res2, float k_1, float k_2 )
+{
+    float h = clamp( 0.5 + 0.5*(res2 - res1)/k_1, 0.0, 1.0 );
+    return mix( res2, res1, h ) - k_1*h*(1.0-h);
+}
+"""
+
+SMOOTH_UNION_MIXED_VEC_CODE = Template("""
+${type} SmoothUnionMixed( ${type} res1, ${type} res2, float k_1, float k_2 )
+{
+    float h_1 = clamp( 0.5 + 0.5*(res2.x - res1.x)/k_1, 0.0, 1.0 );
+    float h_2 = clamp( 0.5 + 0.5*(res2.x - res1.x)/k_2, 0.0, 1.0 );
+    ${type} out_res = mix( res2, res1, h_2 );
+    out_res.x = mix( res2.x, res1.x, h_1 ) - k_1*h_1*(1.0-h_1);
+
+    return out_res;
+}
+""")
+
+
+SMOOTH_UNION_MIXED_MATPOINT_CODE = Template("""
+${type} SmoothUnionMixed( ${type} res1, ${type} res2, float k_1, float k_2 )
+{
+    float h_1 = clamp( 0.5 + 0.5*(res2.x - res1.x)/k_1, 0.0, 1.0 );
+    float h_2 = clamp( 0.5 + 0.5*(res2.x - res1.x)/k_2, 0.0, 1.0 );
+    // mix res, albedo, emissive, mrc
+    float t_1 = k_1*h_1*(1.0-h_1);
+    // float t_2 = k_2*h_2*(1.0-h_2); // not used
+    ${type} out_res;
+    out_res.x = mix( res2.x, res1.x, h_1 ) - t_1;
+    out_res.mat.albedo = mix( res2.mat.albedo, res1.mat.albedo, h_2 );
+    out_res.mat.emissive = mix( res2.mat.emissive, res1.mat.emissive, h_2 );
+    out_res.mat.mrc = mix( res2.mat.mrc, res1.mat.mrc, h_2 );
+    return out_res;
+}
+""")
+
+SMOOTH_UNION_MIXED_ARITY_MAP = {
+    ("float", 2): SMOOTH_UNION_MIXED_FLOAT_CODE,
+    ("vec2", 2): SMOOTH_UNION_MIXED_VEC_CODE.substitute(type="vec2"),
+    ("vec3", 2): SMOOTH_UNION_MIXED_VEC_CODE.substitute(type="vec3"),
+    ("vec4", 2): SMOOTH_UNION_MIXED_VEC_CODE.substitute(type="vec4"),
+    ("MATPoint", 2): SMOOTH_UNION_MIXED_MATPOINT_CODE.substitute(type="MATPoint"),
+}
+
 
 # SMOOTH INTERSECTION TEMPLATES
 SMOOTH_INTERSECTION_FLOAT_CODE = """

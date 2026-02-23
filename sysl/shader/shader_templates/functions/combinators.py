@@ -13,6 +13,7 @@ from .combinator_templates import (
     COMPLEMENT_ARITY_MAP,
     SMOOTH_UNION_ARITY_MAP,
     GEOM_ONLY_SMOOTH_UNION_ARITY_MAP,
+    SMOOTH_UNION_MIXED_ARITY_MAP,
     SMOOTH_INTERSECTION_ARITY_MAP,
     SMOOTH_DIFFERENCE_ARITY_MAP,
     XOR_ARITY_MAP,
@@ -62,6 +63,12 @@ def smooth_union_factory():
     """Create a SmoothUnion shader module."""
     name = "SmoothUnion"
     module = FixedArityShaderModule(name, SMOOTH_UNION_ARITY_MAP)
+    return module
+
+def smooth_union_mixed_factory():
+    """Create a SmoothUnionMixed shader module."""
+    name = "SmoothUnionMixed"
+    module = FixedArityShaderModule(name, SMOOTH_UNION_MIXED_ARITY_MAP)
     return module
 
 
@@ -125,6 +132,7 @@ SMMap["Difference"] = diff_factory
 SMMap["SwitchedDifference"] = switched_diff_factory
 SMMap["Complement"] = complement_factory
 SMMap["SmoothUnion"] = smooth_union_factory
+SMMap["SmoothUnionMixed"] = smooth_union_mixed_factory
 SMMap["GeomOnlySmoothUnion"] = geom_only_smooth_union_factory
 SMMap["SmoothIntersection"] = smooth_intersection_factory
 SMMap["SmoothDifference"] = smooth_difference_factory

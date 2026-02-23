@@ -36,7 +36,7 @@ ${INNER_CODE}
 
 void main(void)
 {
-  ${LOAD_PARAMS_CALL}
+  ${LOAD_PARAMS_CALLS}
   mainImage(fragColor, gl_FragCoord.xy);
 }""")
 
@@ -44,7 +44,7 @@ ShaderToy_TEMPLATE = Template("""
 ${INNER_CODE}
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
-  ${LOAD_PARAMS_CALL}
+  ${LOAD_PARAMS_CALLS}
   mainImage_ST(fragColor, fragCoord);
 }
 """)
@@ -61,7 +61,7 @@ ${INNER_CODE}
 
 void main(void)
 {
-  ${LOAD_PARAMS_CALL}
+  ${LOAD_PARAMS_CALLS}
   main_sdf_trace(fragColor, gl_FragCoord.xy);
 }""")
 
@@ -78,7 +78,7 @@ ${INNER_CODE}
 
 void main(void)
 {
-  ${LOAD_PARAMS_CALL}
+  ${LOAD_PARAMS_CALLS}
   mainImage_post_trace(fragColor, gl_FragCoord.xy);
 }""")
 
@@ -403,12 +403,12 @@ class GlobalShaderContext:
 
         # varlinking code
         varlinking_declarations, load_params_function = self.emit_varlinking(settings)
+        load_param_calls = self.load_precompute_calls(varlinking_declarations)
+
         if varlinking_declarations:
-            load_params_call = "loadParams();"
             code_blocks.append(varlinking_declarations)
             code_blocks.append(load_params_function)
-        else:
-            load_params_call = ""
+        
             
         for module_name in sorted_modules:
             module = self.shader_modules[module_name]
@@ -421,17 +421,17 @@ class GlobalShaderContext:
 
         if version == "default":
             if settings.get("target", "GLSL") == "GLSL":
-                real_code = GLSL_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALL=load_params_call)
+                real_code = GLSL_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALLS=load_param_calls)
             elif settings.get("target", "GLSL") == "ShaderToy":
                 #  rename MainImage.
                 inner_code = inner_code.replace("void mainImage", "void mainImage_ST")
-                real_code = ShaderToy_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALL=load_params_call)
+                real_code = ShaderToy_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALLS=load_param_calls)
             else:
                 raise ValueError(f"Invalid target: {settings.get('target', 'GLSL')}")
         elif version == "sdf_trace":
-            real_code = GLSL_SDF_TRACE_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALL=load_params_call)
+            real_code = GLSL_SDF_TRACE_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALLS=load_param_calls)
         elif version == "post_sdf_trace":
-            real_code = GLSL_POST_SDF_TRACE_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALL=load_params_call)
+            real_code = GLSL_POST_SDF_TRACE_TEMPLATE.substitute(INNER_CODE=inner_code, LOAD_PARAMS_CALLS=load_param_calls)
         else:
             raise ValueError(f"Invalid version: {version}")
 
@@ -448,6 +448,16 @@ class GlobalShaderContext:
             }
         
         return uniforms
+    
+    def load_precompute_calls(self, varlinking_declarations) -> str:
+        load_param_calls = []
+        if varlinking_declarations:
+            load_param_calls.append("loadParams();")
+        for shader_module_name, shader_module in self.shader_modules.items():
+            if shader_module.has_precompute:
+                load_param_calls.append(shader_module.precompute_call())
+        return "\n".join(load_param_calls)
+
     
     def convert_uniforms_to_constants(self) -> None:
         """Convert all uniforms to constants for static compilation."""

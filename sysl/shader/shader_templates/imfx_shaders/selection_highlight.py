@@ -82,5 +82,6 @@ void main(void)
         }
     }
     fragColor = outline? mix(fragColor, vec4(1.0, 0.0, 0.0, 1.0), 0.5) : fragColor;
+    fragColor = center_id < 0 ? vec4(1.0, 1.0, 1.0, 1.0) : fragColor;
 }
 """)

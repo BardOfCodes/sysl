@@ -63,19 +63,19 @@ def spherical_rgb_grid_3d(points, colors, texture_name, metallic, roughness):
     # Use xyz only
     p = points[:, :3]  # (N, 3)
 
-    # Convert to spherical coords
+    # Spherical mapping with pole along (1,1,1) corner.
+    # Basis: (1,0,-1) and (1,-2,1) are orthogonal to (1,1,1) and each other.
+    INV_SQRT3 = 1.0 / math.sqrt(3)
     r = th.linalg.norm(p, dim=-1, keepdim=True)  # (N, 1)
     cdir = p / (r + 1e-8)  # normalize
 
-    # θ = atan(z, x), φ = acos(y)
-    theta = th.atan2(cdir[:, 2], cdir[:, 0])  # [-π, π]
-    phi = th.acos(th.clamp(cdir[:, 1], -1.0, 1.0))  # [0, π]
+    elev = (cdir[:, 0] + cdir[:, 1] + cdir[:, 2]) * INV_SQRT3
+    az_u = cdir[:, 0] - cdir[:, 2]
+    az_v = (cdir[:, 0] - 2.0 * cdir[:, 1] + cdir[:, 2]) * INV_SQRT3
 
-    # Normalize to [0,1]
-    u = theta / (2 * math.pi) + 0.5
-    v = phi / math.pi
+    u = th.atan2(az_v, az_u) / (2 * math.pi) + 0.5
+    v = th.acos(th.clamp(elev, -1.0, 1.0)) / math.pi
 
-    # Stack and clamp
     uv = th.stack([u, v], dim=-1).clamp(0, 1)  # (N, 2)
 
     # Sample the 2D texture

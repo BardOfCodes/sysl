@@ -239,7 +239,7 @@ def eval_prim_sdf_2d(expression: gls.Primitive2D, global_sc) -> GlobalShaderCont
 @rec_sdf_shader_eval.register
 def eval_encoded_sdf_grid_3d(expression: type_union[sls.EncodedSDFGrid3D, sls.AABBEncodedSDFGrid3D], global_sc) -> GlobalShaderContext:
     # basic version
-    return eval_encoded_sdf_grid_3d_v1(expression, global_sc)
+    return eval_encoded_sdf_grid_3d_v1(expression, global_sc, mode="sdf_trace")
 
 @rec_sdf_shader_eval.register
 def eval_sdf_grid_3d(expression: type_union[gls.SDFGrid3D, sls.RGBGrid3D], global_sc) -> GlobalShaderContext:
@@ -250,9 +250,10 @@ def eval_sdf_grid_3d(expression: type_union[gls.SDFGrid3D, sls.RGBGrid3D], globa
 def eval_sdf_combinator(expression: COMBINATOR_TYPE, global_sc) -> GlobalShaderContext:
     """Evaluate SDF combinator expressions (Union, Intersection, Difference, etc.)."""
     func_name = expression.__class__.__name__
+    args = expression.get_args()
     if isinstance(expression, (gls.SmoothUnion, gls.SmoothIntersection, gls.SmoothDifference, sls.MatSmoothColorOnly)):
-        tree_branches = [arg for arg in expression.args[:-1]]
-        param_list = [expression.args[-1]]
+        tree_branches = [x for x in args if isinstance(x, gls.GLFunction) and not isinstance(x, gls.Variable)]
+        param_list = [x for x in args if x not in tree_branches]
     else:
         tree_branches, param_list = [], []
         tree_branches = [arg for arg in expression.args]

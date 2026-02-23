@@ -15,6 +15,7 @@ class ShaderModule:
         self.outputs = outputs
         self.properties = properties
         self.hit_count = 0
+        self.has_precompute = False
 
     def emit_code(self):
         return self.code

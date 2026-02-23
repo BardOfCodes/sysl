@@ -51,11 +51,12 @@ def recursive_gls_to_sysl(gls_expr, ind=0, version="v4", mode="complex", colors=
 def recursive_sm_to_smg(gls_expr):
     if isinstance(gls_expr, gls.SmoothUnion):
         new_args = []
-        arg_1 = recursive_sm_to_smg(gls_expr.args[0])
-        arg_2 = recursive_sm_to_smg(gls_expr.args[1])
+        old_args = gls_expr.get_args()
+        arg_1 = recursive_sm_to_smg(old_args[0])
+        arg_2 = recursive_sm_to_smg(old_args[1])
         new_args.append(arg_1)
         new_args.append(arg_2)
-        dilation_factor = gls_expr.args[2]
+        dilation_factor = old_args[2]
         new_args.append(dilation_factor)
         new_expr = sls.GeomOnlySmoothUnion(*new_args)
         return new_expr
@@ -71,6 +72,48 @@ def recursive_sm_to_smg(gls_expr):
             return gls_expr.__class__(*new_args)
         else:
             return gls_expr
+
+
+def recursive_smg_to_sm(gls_expr):
+    if isinstance(gls_expr, sls.GeomOnlySmoothUnion):
+        new_args = []
+        old_args = gls_expr.get_args()
+        arg_1 = recursive_smg_to_sm(old_args[0])
+        arg_2 = recursive_smg_to_sm(old_args[1])
+        new_args.append(arg_1)
+        new_args.append(arg_2)
+        dilation_factor = old_args[2]
+        new_args.append(dilation_factor)
+        new_expr = gls.SmoothUnion(*new_args)
+        return new_expr
+    else:
+        if isinstance(gls_expr, gls.GLFunction):
+            new_args = []
+            for arg in gls_expr.args:
+                if isinstance(arg, gls.GLBase):
+                    out_expr = recursive_smg_to_sm(arg)
+                    new_args.append(out_expr)
+                else:
+                    new_args.append(arg)
+            return gls_expr.__class__(*new_args)
+        else:
+            return gls_expr
+
+def remove_material_from_expression(expression):
+    if isinstance(expression, sls.MatSolid):
+        return expression.args[0]
+    elif isinstance(expression, gls.GLFunction):
+        new_args = expression.get_args()
+        out_args = []
+        for arg in new_args:
+            if isinstance(expression, gls.GLFunction):
+                out_args.append(remove_material_from_expression(arg))
+            else:
+                out_args.append(arg)
+        return expression.__class__(*out_args)
+    else:
+        return expression
+
 
 
 def frames_to_animation(

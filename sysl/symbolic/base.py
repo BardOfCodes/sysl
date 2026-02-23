@@ -121,3 +121,19 @@ class GeomOnlySmoothUnion(gls.SmoothUnion):
     @classmethod
     def default_spec(cls):
         return {"expr_0": {"type": "Expr"}, "expr_1": {"type": "Expr"}, "k": {"type": "float"}}
+
+@register_symbol
+class SmoothUnionMixed(gls.SmoothUnion):
+    """
+    Smooth union that blends geometry but keeps materials separate.
+    
+    Unlike regular SmoothUnion which also blends materials, this version
+    smoothly blends the SDF values while selecting the material from
+    whichever surface is closer. Useful when you want smooth geometry
+    transitions but distinct material boundaries.
+    """
+    symbol_category = "sysl_base"
+    
+    @classmethod
+    def default_spec(cls):
+        return {"expr_0": {"type": "Expr"}, "expr_1": {"type": "Expr"}, "k_1": {"type": "float"}, "k_2": {"type": "float"}}

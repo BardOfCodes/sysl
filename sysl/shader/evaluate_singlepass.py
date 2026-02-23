@@ -353,6 +353,7 @@ def eval_prim_sdf(expression: type_union[gls.Primitive2D, gls.Primitive3D], glob
 @rec_shader_eval.register
 def eval_encoded_sdf_grid_3d(expression: type_union[sls.EncodedSDFGrid3D, sls.AABBEncodedSDFGrid3D], global_sc:GlobalShaderContext=None, *args, **kwargs) -> GlobalShaderContext:
     # basic version
+    mode=kwargs.get("mode", "sdf")
     params = expression.args
     shader_params = _inline_parse_param_from_expr(expression, params, global_sc)
     sdf_texture_name = shader_params[0]
@@ -386,7 +387,15 @@ def eval_encoded_sdf_grid_3d(expression: type_union[sls.EncodedSDFGrid3D, sls.AA
             sdf_texture_name=sdf_texture_name,
             bound_threshold=bound_threshold
         )
-    global_sc.local_sc.res_sdf_stack.append(("float", sdf_name))
+    if mode == "sdf_trace":
+        prim_id = global_sc.prim_count  # Store BEFORE increment
+        prim_name = f"prim_{prim_id}"
+        global_sc.prim_count += 1
+        code_line = f"vec2 {prim_name} = vec2({sdf_name}, {prim_id});"  # Use stored value
+        global_sc.local_sc.add_codeline(code_line)
+        global_sc.local_sc.res_sdf_stack.append(("vec2", prim_name))
+    else:
+        global_sc.local_sc.res_sdf_stack.append(("float", sdf_name))
     # Register the texture info
     texture_data = {'name': sdf_texture_name, 
                     'data_b64': b64_data,
@@ -407,9 +416,10 @@ def eval_sdf_grid_3d(expression: type_union[gls.SDFGrid3D, sls.RGBGrid3D], globa
 def eval_sdf_combinator(expression: COMBINATOR_TYPE, global_sc, *args, **kwargs) -> GlobalShaderContext:
     # it could be a argument tree, instead of this. 
     func_name = expression.__class__.__name__
+    args = expression.get_args()
     if isinstance(expression, (gls.SmoothUnion, gls.SmoothIntersection, gls.SmoothDifference, sls.MatSmoothColorOnly)):
-        tree_branches = [arg for arg in expression.args[:-1]]
-        param_list = [expression.args[-1]]
+        tree_branches = [x for x in args if isinstance(x, gls.GLFunction) and not isinstance(x, gls.Variable)]
+        param_list = [x for x in args if x not in tree_branches]
     else:
         tree_branches, param_list = [], []
         tree_branches = [arg for arg in expression.args]
@@ -650,6 +660,7 @@ rgb_grid_3d_for_v4_template = Template("""
     mat_0.albedo = rgb;
     mat_0.mrc = vec3(${mrc});
 """)
+
 rgb_grid_2d_polar_template = Template("""
     Material mat_0;
 
@@ -660,7 +671,9 @@ rgb_grid_2d_polar_template = Template("""
     float r     = length(p_local);
     vec3  dir   = normalize(p_local);
     float theta = atan(dir.z, dir.x);           // azimuth [-π, π]
+    theta = (theta + PI/2.0) % (2.0 * PI) - PI;
     float phi   = acos(clamp(dir.y, -1.0, 1.0)); // elevation [0, π]
+    phi = (phi + PI/4.0) % PI;
 
     // normalize to [0,1]
     vec2 uv = vec2(theta / (2.0 * PI) + 0.5, phi / PI);
@@ -679,21 +692,21 @@ esrgb_3d_shifted_template = Template("""
     // local position in [-1,1]^3
     vec3 p_local = pos_0;
 
-    // convert to spherical coordinates
-    float r     = length(p_local);
-    vec3  dir   = normalize(p_local);
-    float theta = atan(dir.z, dir.x);           // azimuth [-π, π]
-    float phi   = acos(clamp(dir.y, -1.0, 1.0)); // elevation [0, π]
+    // Spherical mapping with pole along (1,1,1) corner so the singularity
+    // falls on the cuboid corner instead of a face center.
+    // Basis: (1,0,-1) and (1,-2,1) are orthogonal to (1,1,1) and each other.
+    vec3 dir = normalize(p_local);
+    float elev = (dir.x + dir.y + dir.z) * 0.57735;  // dot(dir, normalize(1,1,1))
+    float u = dir.x - dir.z;                          // dot(dir, (1,0,-1))
+    float v = (dir.x - 2.0 * dir.y + dir.z) * 0.57735; // dot(dir, (1,-2,1)) scaled to match u
+    float theta = atan(v, u) / (2.0 * PI) + 0.5;
+    float phi   = acos(clamp(elev, -1.0, 1.0)) / PI;
 
-    // normalize to [0,1]
-    vec2 uv = vec2(theta / (2.0 * PI) + 0.5, phi / PI);
-
+    vec2 uv = vec2(theta, phi);
     uv = uv * ${scale} + ${shift};
 
-    // sample 2D texture using (θ, φ)
     vec3 rgb = texture(${rgb_texture_name}, uv).rgb;
 
-    // assign material properties
     mat_0.albedo = rgb;
     mat_0.mrc = vec3(${mrc});
 """)
@@ -799,6 +812,7 @@ def eval_mat_v4(expression: sls.MaterialV4, global_sc, cur_pos=None, *args, **kw
     code_line = f"Material {mat_name} = {func_name}({shader_params});"
     global_sc.local_sc.add_codeline(code_line)
     global_sc.local_sc.add_dependency(dep_name)
+    global_sc.local_sc.vardeps.append("PI")
     global_sc.add_shader_module(dep_name)
     global_sc.material_stack.append(mat_name)
     return global_sc

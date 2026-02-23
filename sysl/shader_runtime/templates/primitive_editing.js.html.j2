@@ -449,17 +449,18 @@ function handleAxisRightClick(event) {
  */
 function formatDefineValue(value) {
   if (Array.isArray(value)) {
+    const num = v => (typeof v === 'number' ? v : parseFloat(v));
     if (value.length === 1) {
-      // Single element - use as plain float, not vec1
-      return value[0].toFixed(10);
+      return Number(num(value[0])).toFixed(10);
     }
     const vecType = `vec${value.length}`;
-    const values = value.map(v => v.toFixed(value.length > 2 ? 6 : 10)).join(', ');
+    const values = value.map(v => Number(num(v)).toFixed(value.length > 2 ? 6 : 10)).join(', ');
     return `${vecType}(${values})`;
   } else if (typeof value === 'number') {
     return value.toFixed(10);
   }
-  return String(value);
+  const n = parseFloat(value);
+  return (!Number.isNaN(n) ? n.toFixed(10) : String(value));
 }
 
 function getUniformName(index) {
@@ -648,6 +649,48 @@ function exportVarMap() {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Coerce a loaded value to the format expected by varMap (numbers, not strings).
+ */
+function coerceVarMapValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(v => (typeof v === 'number' ? v : parseFloat(v)));
+  }
+  if (typeof value === 'number') return value;
+  return typeof value === 'string' ? parseFloat(value) : value;
+}
+
+function importVarMap() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const loaded = JSON.parse(e.target.result);
+        for (const [key, value] of Object.entries(loaded)) {
+          varMap[key] = coerceVarMapValue(value);
+        }
+        if (currentEditingPrimitive !== null) {
+          updateShadersForPrimitive(currentEditingPrimitive);
+          loadUniformsFromVarMap(currentEditingPrimitive);
+        } else {
+          updateShadersForPrimitive(null);
+          for (const primitiveId of Object.keys(primitiveMap)) {
+            loadUniformsFromVarMap(primitiveId);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to parse or apply var map:', err);
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
 
 // Keyboard event for axis editing
 document.addEventListener('keydown', (event) => {
@@ -725,6 +768,25 @@ canvas.addEventListener('wheel', (event) => {
   }
 }, true);
 
-// Set up export button
+// Set up export and import buttons
 document.getElementById('export-varmap-btn')?.addEventListener('click', exportVarMap);
+document.getElementById('import-varmap-btn')?.addEventListener('click', importVarMap);
+
+// Expose varMap and a flush helper so the parent frame can read the latest edited values
+window.varMap = varMap;
+window.getVarMap = function() {
+  if (currentEditingPrimitive !== null) {
+    saveUniformsToVarMap();
+  }
+  return JSON.parse(JSON.stringify(varMap));
+};
+
+// Respond to parent's request for varMap via postMessage (avoids timing/contentWindow issues)
+window.addEventListener('message', function(event) {
+  if (event.data?.type === 'GET_VARMAP' && event.source === window.parent) {
+    const requestId = event.data.requestId;
+    const payload = window.getVarMap();
+    window.parent.postMessage({ type: 'VARMAP', requestId, payload }, '*');
+  }
+});
 
