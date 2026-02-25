@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "setuptools_scm[toml]>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sysl"
+name = "sysl3d"
 dynamic = ["version"]
 description = "Symbolic Scene Language - Convert geometric expressions to shader code for sphere-traced rendering"
 readme = "README.md"
@@ -68,7 +68,7 @@ dev = [
     "mypy>=1.0.0",
 ]
 all = [
-    "sysl[jupyter,offline,torch]",
+    "sysl3d[jupyter,offline,torch]",
 ]
 
 [project.urls]

@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![PyPI - Version](https://img.shields.io/pypi/v/sysl.svg)](https://pypi.org/project/sysl/)
+[![PyPI - Version](https://img.shields.io/pypi/v/sysl3d.svg)](https://pypi.org/project/sysl3d/)
 
 **SySL** extends [GeoLiPI](https://github.com/bardofcodes/geolipi) by adding material-related symbols to geometric expressions. It provides an shader evaluation pipeline that converts symbolic scene expressions into GLSL shader code, enabling sphere-traced rendering and real-time interactive WebGL visualization.
 
@@ -54,10 +54,10 @@ Generate frame-by-frame renders for animations.
 
 ### From PyPI (recommended)
 
-SySL is published on PyPI. For most users this is the easiest way to get started:
+SySL is published on PyPI under the name `sysl3d`. For most users this is the easiest way to get started:
 
 ```bash
-pip install sysl
+pip install sysl3d
 ```
 
 You will also need [GeoLiPI](https://github.com/bardofcodes/geolipi), which provides the
