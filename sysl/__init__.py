@@ -22,7 +22,12 @@ Example:
     >>> html = create_shader_html(shader_code, uniforms, textures)
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("sysl")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
 __author__ = "Aditya Ganeshan"
 
 # =============================================================================

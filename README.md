@@ -2,10 +2,10 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI - Version](https://img.shields.io/pypi/v/sysl.svg)](https://pypi.org/project/sysl/)
 
 **SySL** extends [GeoLiPI](https://github.com/bardofcodes/geolipi) by adding material-related symbols to geometric expressions. It provides an shader evaluation pipeline that converts symbolic scene expressions into GLSL shader code, enabling sphere-traced rendering and real-time interactive WebGL visualization.
 
-<!-- TODO: Add hero image/GIF showing example renders -->
 <p align="center">
   <img src="assets/hero.jpg" alt="SySL Rendering Examples">
 </p>
@@ -15,7 +15,6 @@
 ### 1. Paper-Ready Renders
 Generate high-quality renders of primitive assemblies without mesh conversion. I used this system for rendering primitive assemblies for paper figures in a recent work [Residual Primitive Fitting of 3D Shapes with SuperFrusta](https://arxiv.org/abs/2512.09201). 
 
-<!-- TODO: Add render comparison image -->
 <p align="center">
   <img src="assets/paper_fig.jpg" alt="Primitive Assembly Render">
 </p>
@@ -23,7 +22,6 @@ Generate high-quality renders of primitive assemblies without mesh conversion. I
 ### 2. Interactive Web Visualization
 Create standalone HTML files for interactive 3D visualization. Useful for debugging, or stand alone apps. 
 
-<!-- TODO: Add interactive demo GIF -->
 <p align="center">
   <img src="assets/interaction.gif" alt="Interactive Demo" width="400">
 </p>
@@ -39,7 +37,6 @@ Create an standalone app for editing *textured* (deployable) primitive assemblie
 ### 4. Animation Sequences
 Generate frame-by-frame renders for animations.
 
-<!-- TODO: Add animation example -->
 <p align="center">
   <img src="assets/animation.gif" alt="Editing Demo" width="400">
 </p>
@@ -55,68 +52,83 @@ Generate frame-by-frame renders for animations.
 - **Image Effects (IMFX)**: Post-processing effects like outlines, dithering, anti-aliasing
 ## Installation
 
-### Prerequisites
-- Python 3.8+
-- [GeoLiPI](https://github.com/bardofcodes/geolipi) (geometric expression library)
+### From PyPI (recommended)
 
-### From Source
+SySL is published on PyPI. For most users this is the easiest way to get started:
 
 ```bash
-# Clone the repository
+pip install sysl
+```
+
+You will also need [GeoLiPI](https://github.com/bardofcodes/geolipi), which provides the
+geometric expression system that SySL builds on:
+
+```bash
+pip install geolipi
+```
+
+### From source
+
+```bash
 git clone https://github.com/bardofcodes/sysl.git
 cd sysl
 
-# Install geolipi first (if not already installed)
-# pip install geolipi  # or install from source
-
-# Install SySL
-pip install -e .
-```
-
-### Dependencies
-
-```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Editable install for development
+pip install -e .
 ```
 
 ## Quick Start
 
-### Basic Example
+### Basic example
 
 ```python
-# TODO: Fill in working example
 import geolipi.symbolic as gls
 import sysl.symbolic as sls
-from sysl.shader import evaluate_to_shader
+from sysl.shader import DEFAULT_SETTINGS, RenderMode, evaluate_to_shader
 from sysl.shader_runtime import create_shader_html
 
-# Create geometry
-geometry = gls.DeathStar3D((0.5,), (0.35,), (0.5,))
+# Create simple geometry
+geometry = gls.Sphere3D((1.0,))
 
-# Add materials  
-material = sls.MatRefV4("MatLava")
-scene_with_material = sls.MatSolid(geometry, material)
+# Define a basic V4 material (albedo, emissive, mrc)
+material = sls.MaterialV4(
+    (1.0, 0.2, 0.1),  # albedo
+    (0.0, 0.0, 0.0),  # emissive
+    (0.5, 0.3, 0.0),  # metallic / roughness / clearcoat
+)
+scene = sls.MatSolidV4(geometry, material)
+
+# Choose a render mode and settings
+settings = dict(DEFAULT_SETTINGS)
+settings["render_mode"] = RenderMode.V4
 
 # Generate shader
-shader_info = evaluate_to_shader(scene_with_material)
+shader_code, uniforms, textures = evaluate_to_shader(scene, settings=settings)
 
-# Generate HTML
-html_code = create_shader_html(shader_info, show_controls=True)
+# Generate HTML viewer
+html_code = create_shader_html(
+    shader_code,
+    uniforms,
+    textures,
+    show_controls=True,
+)
 
-# Save to a file: 
-with open("<path-to-webserver>/test.html", "w") as f:
+# Save to a file and serve via a simple HTTP server
+with open("sysl_example.html", "w") as f:
     f.write(html_code)
-# Now lauch a python server at that location and open test.html.
-# for instance:
-# cd <path-to-webserver>
-# python -m http.server
-#  -> open localhost:8000/test.html in a web browser.
+```
 
-#  If in Jupyter Notebook 
-from IPython.display import display, HTML
+### Jupyter Notebook
+
+```python
+from IPython.display import HTML, display
 from sysl.shader_runtime.generate_shader_html import make_jupyter_compatible_html
-jupy_wrapper_html = make_jupyter_compatible_html(html_code)
-display(HTML(jupy_wrapper_html))
+
+wrapped = make_jupyter_compatible_html(html_code)
+display(HTML(wrapped))
 ```
 
 ### Jupyter Notebook
@@ -136,20 +148,28 @@ SySL supports multiple rendering pipelines, each with different visual character
 | **V5** | Toon Shader | NPR stylized rendering |[ShaderToy](https://www.shadertoy.com/view/ll33Wn)|
 | **V6** | Dithered Shader | V2 + Dithering + outline |[ShaderToy](https://www.shadertoy.com/view/33BXW3)|
 
-### Selecting a Render Mode
+### Selecting a render mode
 
+You can select different render modes via the `RenderMode` enum:
 
 ```python
-settings = {
-    "render_mode": "v4",  # Options: v1, v2, v3, v4, v5, v6
-    "variables": {
-        "castShadows": True,
-        "_AA": 2,  # Anti-aliasing factor
-    }
-}
+from sysl.shader import DEFAULT_SETTINGS, RenderMode, evaluate_to_shader
+
+settings = dict(DEFAULT_SETTINGS)
+settings["render_mode"] = RenderMode.V4  # v1–v6
 
 shader_code, uniforms, textures = evaluate_to_shader(expression, settings=settings)
 ```
+
+## API overview
+
+The main entry points most users interact with are:
+
+- `sysl.evaluate_to_shader(expression, mode=\"singlepass\" | \"multipass\", settings=None)`
+- `sysl.create_shader_html(shader_code, uniforms, textures, show_controls=False, ...)`
+- `sysl.symbolic` – symbolic building blocks (materials, combinators, fields, etc.)
+
+See the examples in `examples/` and `notebooks/` for more complete workflows.
 
 ## Image Effects (IMFX)
 
@@ -175,6 +195,7 @@ sysl/
 │   └── torch_compute/   # PyTorch-based evaluation (optional)
 ├── scripts/             # Example scripts
 ├── notebooks/           # Jupyter notebook examples
+├── tests/               # Pytest-based test suite
 └── assets/              # Images for documentation
 ```
 
@@ -230,6 +251,19 @@ See `sysl/shader/shader_templates/future_shaders.md` for planned shader addition
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 **Note**: Shader templates derived from ShaderToy retain their original licensing.
+
+## Maintenance & contributions
+
+SySL is currently **solo-maintained**. Releases, versioning, and roadmap decisions are
+made by the maintainer and may evolve as the surrounding research/software does.
+
+At this time the project has a **closed contribution policy**:
+
+- External pull requests are not accepted by default.
+- Bug reports and feature requests are still welcome via GitHub issues.
+
+If this policy changes in the future, the README and `CONTRIBUTING.md` will be updated
+to reflect the new contribution model.
 
 ## Contact
 

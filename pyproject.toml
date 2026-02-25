@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0", "setuptools_scm[toml]>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "sysl"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Symbolic Scene Language - Convert geometric expressions to shader code for sphere-traced rendering"
 readme = "README.md"
 license = {text = "MIT"}
@@ -64,6 +64,8 @@ dev = [
     "pytest>=6.0.0",
     "black>=21.0.0",
     "flake8>=3.9.0",
+    "ruff>=0.5.0",
+    "mypy>=1.0.0",
 ]
 all = [
     "sysl[jupyter,offline,torch]",
@@ -101,9 +103,27 @@ exclude = '''
 )/
 '''
 
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+src = ["sysl"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = []
+
+[tool.mypy]
+python_version = "3.8"
+strict = false
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "node-and-date"
 
 
 
