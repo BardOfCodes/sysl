@@ -15,7 +15,7 @@ import base64
 import zlib
 import logging
 import numpy as np
-from typing import Dict, Any, Tuple, List, Optional
+from typing import Dict, Any, Tuple, List
 
 from PIL import Image
 
@@ -153,8 +153,8 @@ def _create_texture_2d(ctx, data: np.ndarray, dtype: str):
     
     # Set texture parameters
     texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
-    texture.repeat_x = True
-    texture.repeat_y = True
+    texture.repeat_x = False
+    texture.repeat_y = False
     
     return texture
 
@@ -176,9 +176,9 @@ def _create_texture_3d(ctx, data: np.ndarray, dtype: str):
     
     # Set texture parameters
     texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
-    texture.repeat_x = True
-    texture.repeat_y = True
-    texture.repeat_z = True
+    texture.repeat_x = False
+    texture.repeat_y = False
+    texture.repeat_z = False
     
     return texture
 
@@ -370,7 +370,6 @@ def render_single_pass(
 
 def render_multipass(
     passes: List[Dict[str, Any]],
-    size: Optional[Tuple[int, int]] = None,
     setup_env: bool = True
 ) -> np.ndarray:
     """
@@ -385,13 +384,13 @@ def render_multipass(
             - textures: Dict of textures
             - input_FBOs: List of input FBO specs
             - output_FBO: Output FBO spec or dict with 'name': 'image'
-        size: Optional output size override. If None, uses FBO sizes from passes.
         setup_env: If True, configure environment for headless rendering.
                    Set to False if you've already configured the environment
                    or want to manage it yourself.
         
     Returns:
-        numpy array of shape (H, W, 3) with RGB image data (uint8)
+        numpy array of shape (H, W, 4) with RGBA image data (uint8).
+        The alpha channel reflects the shader's vec4 fragColor output.
         
     Raises:
         ImportError: If moderngl is not installed
@@ -405,16 +404,17 @@ def render_multipass(
     ctx = _create_context()
     
     try:
-        # Determine final output size
+        # Determine fallback output size from the final image pass. In normal
+        # multipass shaders these dimensions are baked into output_FBO by
+        # evaluate_to_shader from settings["variables"]["resolution"].
+        size = None
+        for p in reversed(passes):
+            out = p['output_FBO']
+            if isinstance(out, dict) and out.get('name') == 'image':
+                size = (out['width'], out['height'])
+                break
         if size is None:
-            # Find the pass that outputs to 'image' and use its output size
-            for p in reversed(passes):
-                out = p['output_FBO']
-                if isinstance(out, dict) and out.get('name') == 'image':
-                    size = (out['width'], out['height'])
-                    break
-            if size is None:
-                size = (512, 512)
+            size = (512, 512)
         
         W, H = size
         
@@ -513,8 +513,8 @@ def render_multipass(
             # If this is final pass, save reference
             if out_name == 'image':
                 ctx.finish()
-                data = fbo.read(components=3, alignment=1)
-                img = Image.frombytes('RGB', (out_w, out_h), data)
+                data = fbo.read(components=4, alignment=1)
+                img = Image.frombytes('RGBA', (out_w, out_h), data)
                 img = img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
                 final_image = np.asarray(img)
         
@@ -525,6 +525,207 @@ def render_multipass(
         
     finally:
         ctx.release()
+
+
+# =============================================================================
+# Persistent Multi-Pass Session
+# =============================================================================
+
+class MultipassSession:
+    """Stateful multipass renderer that keeps the GL context alive and caches
+    compiled shader programs, FBOs and textures across calls.
+
+    ``render_multipass`` creates a fresh moderngl context and recompiles the
+    fragment program on every invocation, which dominates the per-frame cost
+    when the shader source is stable and only uniform values change (e.g.
+    rendering a video where the only thing varying frame-to-frame is the
+    camera or a per-frame uniform). This class lets the caller pay those
+    costs once and reuse the program for all subsequent frames.
+
+    Programs are keyed by GLSL source string, so repeated frames with the same
+    shader hit a cache and skip ``ctx.program(...)``. Intermediate FBOs are
+    keyed by name (plus size+type to be safe), and the final ``image`` FBO is
+    keyed by output size. User textures (e.g. baked 3D tables) are keyed by
+    name + ``data_b64`` so duplicate uploads are avoided.
+
+    Usage::
+
+        with MultipassSession() as session:
+            for frame_settings in frames:
+                _apply_variable_overrides(passes, frame_settings)
+                img = session.render(passes)
+    """
+
+    def __init__(self, setup_env: bool = True):
+        moderngl = _ensure_moderngl()
+        if setup_env:
+            setup_headless_env()
+        self.ctx = _create_context()
+        self.vbo = self.ctx.buffer(FULLSCREEN_QUAD)
+        # shader_code -> (prog, vao)
+        self._program_cache: Dict[str, Tuple[Any, Any]] = {}
+        # (name, w, h, fbo_type) -> (texture, fbo)
+        self._intermediate_fbo_cache: Dict[Tuple[str, int, int, str], Tuple[Any, Any]] = {}
+        # (w, h) -> fbo for output 'image'
+        self._image_fbo_cache: Dict[Tuple[int, int], Any] = {}
+        # (tex_name, data_b64) -> moderngl.Texture (or id(info) if no data_b64)
+        self._texture_cache: Dict[Tuple[str, Any], Any] = {}
+
+    def _get_or_compile(self, shader_code: str):
+        cached = self._program_cache.get(shader_code)
+        if cached is not None:
+            return cached
+        frag_shader = convert_es_to_desktop(shader_code)
+        prog = self.ctx.program(vertex_shader=VERTEX_SHADER, fragment_shader=frag_shader)
+        vao = self.ctx.vertex_array(prog, [(self.vbo, '2f', 'position')])
+        self._program_cache[shader_code] = (prog, vao)
+        return prog, vao
+
+    def _get_or_create_image_fbo(self, w: int, h: int):
+        key = (w, h)
+        fbo = self._image_fbo_cache.get(key)
+        if fbo is None:
+            fbo = self.ctx.simple_framebuffer((w, h))
+            self._image_fbo_cache[key] = fbo
+        return fbo
+
+    def _get_or_create_intermediate_fbo(self, name: str, w: int, h: int, fbo_type: str):
+        key = (name, w, h, fbo_type)
+        entry = self._intermediate_fbo_cache.get(key)
+        if entry is None:
+            entry = _create_fbo(self.ctx, w, h, fbo_type)
+            self._intermediate_fbo_cache[key] = entry
+        return entry  # (texture, fbo)
+
+    def _lookup_intermediate_texture(self, name: str):
+        """Find an intermediate FBO's color texture by name (size/type agnostic).
+
+        This mirrors the original ``render_multipass`` behaviour where input
+        FBO references are by name only.
+        """
+        for (n, _w, _h, _ftype), (tex, _fbo) in self._intermediate_fbo_cache.items():
+            if n == name:
+                return tex
+        return None
+
+    def _get_or_create_user_texture(self, tex_name: str, tex_info: Dict[str, Any]):
+        # Use data_b64 as the content key when available; fall back to object
+        # identity so callers that mutate tex_info still get a fresh upload.
+        key = (tex_name, tex_info.get('data_b64', id(tex_info)))
+        tex = self._texture_cache.get(key)
+        if tex is None:
+            tex = create_texture(self.ctx, tex_info)
+            self._texture_cache[key] = tex
+        return tex
+
+    def render(
+        self,
+        passes: List[Dict[str, Any]],
+    ) -> np.ndarray:
+        """Render one frame using cached programs / FBOs / textures.
+
+        Same semantics as :func:`render_multipass`: returns an RGBA uint8
+        array of shape ``(H, W, 4)`` once a pass outputs to ``'image'``.
+        """
+        moderngl = _ensure_moderngl()
+
+        # Determine fallback output size (same logic as render_multipass).
+        size = None
+        for p in reversed(passes):
+            out = p['output_FBO']
+            if isinstance(out, dict) and out.get('name') == 'image':
+                size = (out['width'], out['height'])
+                break
+        if size is None:
+            size = (512, 512)
+
+        W, H = size
+        final_image = None
+
+        for pass_def in passes:
+            shader_code = pass_def['shader_code']
+            uniforms = pass_def.get('uniforms', {})
+            textures = pass_def.get('textures', {})
+            input_fbos = pass_def.get('input_FBOs', [])
+            output_fbo = pass_def['output_FBO']
+
+            prog, vao = self._get_or_compile(shader_code)
+
+            # Uniforms: only their values change per frame; the program is reused.
+            for name, info in uniforms.items():
+                set_uniform(prog, name, info)
+
+            # Determine output sizing for this pass.
+            if isinstance(output_fbo, dict):
+                out_w = output_fbo.get('width', W)
+                out_h = output_fbo.get('height', H)
+                out_name = output_fbo.get('name', 'image')
+            else:
+                out_w, out_h = W, H
+                out_name = 'image'
+
+            if 'resolution' in prog:
+                prog['resolution'].value = (float(out_w), float(out_h))
+
+            # Bind input FBOs (textures from earlier passes) by name.
+            texture_unit = 0
+            for input_spec in input_fbos:
+                fbo_name = input_spec['name'] if isinstance(input_spec, dict) else input_spec
+                tex = self._lookup_intermediate_texture(fbo_name)
+                if tex is not None and fbo_name in prog:
+                    tex.use(location=texture_unit)
+                    prog[fbo_name].value = texture_unit
+                    texture_unit += 1
+
+            # Bind user textures (e.g. baked tables) -- cached across calls.
+            for tex_name, tex_info in textures.items():
+                tex = self._get_or_create_user_texture(tex_name, tex_info)
+                if tex_name in prog:
+                    tex.use(location=texture_unit)
+                    prog[tex_name].value = texture_unit
+                    texture_unit += 1
+
+            # Get (cached) output FBO.
+            if out_name == 'image':
+                fbo = self._get_or_create_image_fbo(out_w, out_h)
+            else:
+                fbo_type = output_fbo.get('type', 'vec4') if isinstance(output_fbo, dict) else 'vec4'
+                _, fbo = self._get_or_create_intermediate_fbo(out_name, out_w, out_h, fbo_type)
+
+            fbo.use()
+            self.ctx.viewport = (0, 0, out_w, out_h)
+            self.ctx.enable_only(moderngl.NOTHING)
+            self.ctx.clear(0.0, 0.0, 0.0, 1.0)
+            vao.render(mode=moderngl.TRIANGLE_STRIP)
+
+            if out_name == 'image':
+                self.ctx.finish()
+                data = fbo.read(components=4, alignment=1)
+                img = Image.frombytes('RGBA', (out_w, out_h), data)
+                img = img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+                final_image = np.asarray(img)
+
+        if final_image is None:
+            raise RuntimeError("No pass outputs to 'image'")
+        return final_image
+
+    def close(self):
+        """Release the GL context and clear all caches."""
+        try:
+            self.ctx.release()
+        except Exception:
+            pass
+        self._program_cache.clear()
+        self._intermediate_fbo_cache.clear()
+        self._image_fbo_cache.clear()
+        self._texture_cache.clear()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
 
 
 # =============================================================================
@@ -597,7 +798,9 @@ def _create_fbo(ctx, width: int, height: int, fbo_type: str):
     
     # Create floating-point texture
     texture = ctx.texture((width, height), components, dtype='f4')
-    texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+    texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
+    texture.repeat_x = False
+    texture.repeat_y = False
     
     # Create framebuffer
     fbo = ctx.framebuffer(color_attachments=[texture])

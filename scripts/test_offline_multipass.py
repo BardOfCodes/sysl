@@ -46,6 +46,7 @@ def test_basic_multipass_v4():
             "castShadows": True,
             "_AA": 1,
             "_RAYCAST_MAX_STEPS": 200,
+            "resolution": [512, 512],
         },
     }
     
@@ -65,7 +66,7 @@ def test_basic_multipass_v4():
     
     # Render
     print("Rendering multipass...")
-    image = render_multipass(passes, size=(512, 512))
+    image = render_multipass(passes)
     
     print(f"  Output shape: {image.shape}")
     print(f"  Output dtype: {image.dtype}")
@@ -77,7 +78,7 @@ def test_basic_multipass_v4():
     print(f"  Saved to: {output_path}")
     
     # Basic validation
-    assert image.shape == (512, 512, 3), f"Unexpected shape: {image.shape}"
+    assert image.shape == (512, 512, 4), f"Unexpected shape: {image.shape}"
     assert image.dtype == np.uint8, f"Unexpected dtype: {image.dtype}"
     
     if image.mean() < 1.0:
@@ -120,6 +121,7 @@ def test_multipass_union():
             "_ADD_FLOOR_PLANE": False,
             "castShadows": True,
             "_AA": 1,
+            "resolution": [512, 512],
         },
     }
     
@@ -128,7 +130,7 @@ def test_multipass_union():
     print(f"  Number of passes: {len(passes)}")
     
     print("Rendering multipass...")
-    image = render_multipass(passes, size=(512, 512))
+    image = render_multipass(passes)
     
     output_path = "test_multipass_union.png"
     Image.fromarray(image).save(output_path)
@@ -158,6 +160,7 @@ def test_multipass_with_floor():
             "_ADD_FLOOR_PLANE": True,
             "castShadows": True,
             "_AA": 1,
+            "resolution": [512, 512],
         },
     }
     
@@ -166,7 +169,7 @@ def test_multipass_with_floor():
     print(f"  Number of passes: {len(passes)}")
     
     print("Rendering multipass...")
-    image = render_multipass(passes, size=(512, 512))
+    image = render_multipass(passes)
     
     output_path = "test_multipass_floor.png"
     Image.fromarray(image).save(output_path)
@@ -206,7 +209,7 @@ def test_multipass_higher_resolution():
     print(f"  Number of passes: {len(passes)}")
     
     print("Rendering multipass at 1024x1024...")
-    image = render_multipass(passes, size=(1024, 1024))
+    image = render_multipass(passes)
     
     print(f"  Output shape: {image.shape}")
     
@@ -214,7 +217,7 @@ def test_multipass_higher_resolution():
     Image.fromarray(image).save(output_path)
     print(f"  Saved to: {output_path}")
     
-    assert image.shape == (1024, 1024, 3), f"Unexpected shape: {image.shape}"
+    assert image.shape == (1024, 1024, 4), f"Unexpected shape: {image.shape}"
     
     print("TEST PASSED\n")
     return True
@@ -261,5 +264,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
 

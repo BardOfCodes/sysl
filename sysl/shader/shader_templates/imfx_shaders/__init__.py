@@ -5,6 +5,7 @@ from .part_outline_nobg import PART_OUTLINE_NOBG_SHADER
 from .dither import DITHER_SHADER
 from .all_outline import ALL_OUTLINE_NOBG_SHADER
 from .fxaa import fxaa_shader
+from .shape_outline_nobg import SHAPE_OUTLINE_NOBG_SHADER
 lookup_map = {
     "part_outline": PART_OUTLINE_SHADER,
     "basic_third_pass": BASIC_THIRD_PASS_SHADER,
@@ -12,4 +13,5 @@ lookup_map = {
     "part_outline_nobg": PART_OUTLINE_NOBG_SHADER,
     "dither": DITHER_SHADER,
     "all_outline_nobg": ALL_OUTLINE_NOBG_SHADER,
+    "shape_outline_nobg": SHAPE_OUTLINE_NOBG_SHADER,
 }
